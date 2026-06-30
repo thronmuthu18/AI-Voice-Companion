@@ -25,10 +25,44 @@ export class AuthController {
         password
       );
 
+      const userResponse = user.toObject();
+      delete userResponse.password;
+
       return res.status(201).json({
         success: true,
         message: "User registered successfully",
-        user,
+        user: userResponse,
+      });
+
+    } catch (error: any) {
+
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+
+    }
+
+  }
+
+  async login(req: Request, res: Response) {
+
+    try {
+
+      const { email, password } = req.body;
+
+      const user = await authService.login(
+        email,
+        password
+      );
+
+      const userResponse = user.toObject();
+      delete userResponse.password;
+
+      return res.status(200).json({
+        success: true,
+        message: "Login successful",
+        user: userResponse,
       });
 
     } catch (error: any) {
