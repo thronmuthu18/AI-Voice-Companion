@@ -1,6 +1,6 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
-export interface IChat extends Document {
+export interface IChat extends Omit<Document, 'model'> {
   userId: mongoose.Types.ObjectId;
   title: string;
   isPinned: boolean;

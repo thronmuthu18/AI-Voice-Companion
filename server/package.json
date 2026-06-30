@@ -1,13 +1,15 @@
 {
-  "name": "ai-os-server",
+  "name": "ai-voice-companion-server",
   "version": "1.0.0",
-  "description": "Backend API for AI OS",
-  "main": "dist/app.js",
+  "description": "Backend API for AI Voice Companion",
+  "main": "dist/server.js",
   "scripts": {
-    "start": "node dist/app.js",
-    "dev": "ts-node-dev --respawn --transpile-only src/app.ts",
+    "start": "node dist/server.js",
+    "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "tsc",
-    "lint": "eslint src/**/*.ts"
+    "typecheck": "tsc --noEmit",
+    "lint": "npm run typecheck",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
     "bcrypt": "^5.1.1",

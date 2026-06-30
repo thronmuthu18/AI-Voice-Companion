@@ -1,6 +1,6 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
-export interface IMessage extends Document {
+export interface IMessage extends Omit<Document, 'model'> {
   chatId: mongoose.Types.ObjectId;
   role: 'system' | 'user' | 'assistant';
   content: string;
