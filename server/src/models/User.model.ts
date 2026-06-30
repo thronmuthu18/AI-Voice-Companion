@@ -1,37 +1,89 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose, { Schema, Document } from "mongoose";
 
 export interface IUser extends Document {
+  name: string;
   email: string;
-  passwordHash: string;
-  googleId?: string;
-  username: string;
-  fullName: string;
-  bio?: string;
-  country?: string;
-  language: string;
-  theme: string;
-  role: 'user' | 'admin';
-  subscriptionId?: string;
+  password?: string;
+
+  avatar?: string;
+
+  provider: "local" | "google" | "github";
+
+  role: "user" | "admin";
+
+  subscription: "free" | "pro";
+
+  emailVerified: boolean;
+
+  isActive: boolean;
+
+  lastLogin?: Date;
+
   createdAt: Date;
-  lastLogin: Date;
+
+  updatedAt: Date;
 }
 
-const userSchema = new Schema<IUser>(
+const UserSchema = new Schema<IUser>(
   {
-    email: { type: String, required: true, unique: true },
-    passwordHash: { type: String }, // Optional for Google OAuth users
-    googleId: { type: String },
-    username: { type: String, required: true, unique: true },
-    fullName: { type: String, required: true },
-    bio: { type: String },
-    country: { type: String },
-    language: { type: String, default: 'en' },
-    theme: { type: String, default: 'light' },
-    role: { type: String, enum: ['user', 'admin'], default: 'user' },
-    subscriptionId: { type: Schema.Types.ObjectId, ref: 'Subscription' },
-    lastLogin: { type: Date, default: Date.now },
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+      lowercase: true,
+      trim: true,
+    },
+
+    password: {
+      type: String,
+    },
+
+    avatar: {
+      type: String,
+      default: "",
+    },
+
+    provider: {
+      type: String,
+      enum: ["local", "google", "github"],
+      default: "local",
+    },
+
+    role: {
+      type: String,
+      enum: ["user", "admin"],
+      default: "user",
+    },
+
+    subscription: {
+      type: String,
+      enum: ["free", "pro"],
+      default: "free",
+    },
+
+    emailVerified: {
+      type: Boolean,
+      default: false,
+    },
+
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+
+    lastLogin: {
+      type: Date,
+    },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+  }
 );
 
-export const User = mongoose.model<IUser>('User', userSchema);
+export default mongoose.model<IUser>("User", UserSchema);
