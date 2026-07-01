@@ -25,7 +25,7 @@ export class AuthController {
         password
       );
 
-      const userResponse = user.toObject();
+      const userResponse = user.toJSON();
       delete userResponse.password;
 
       return res.status(201).json({
@@ -51,17 +51,18 @@ export class AuthController {
 
       const { email, password } = req.body;
 
-      const user = await authService.login(
+      const result = await authService.login(
         email,
         password
       );
 
-      const userResponse = user.toObject();
+      const userResponse = result.user.toJSON();
       delete userResponse.password;
 
       return res.status(200).json({
         success: true,
         message: "Login successful",
+        accessToken: result.accessToken,
         user: userResponse,
       });
 

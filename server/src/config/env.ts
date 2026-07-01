@@ -8,7 +8,7 @@ const envSchema = z.object({
   PORT: z.coerce.number().default(5000),
   MONGO_URI: z.string().default('mongodb://localhost:27017/ai-os'),
   CLIENT_URL: z.string().url().default('http://localhost:3000'),
-  JWT_SECRET: z.string().min(1).optional(),
+  JWT_SECRET: z.string().min(32),
   JWT_EXPIRES_IN: z.string().default('1d'),
 });
 
