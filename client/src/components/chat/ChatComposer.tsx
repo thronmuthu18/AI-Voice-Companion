@@ -4,13 +4,15 @@ import {
   MicOff,
   Paperclip,
   SendHorizontal,
+  X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import type { Attachment } from "../../types/api.types";
 
 interface ChatComposerProps {
   disabled?: boolean;
   isLoading?: boolean;
-  onSend: (message: string) => void;
+  onSend: (message: string, attachment?: Attachment) => void;
 }
 
 export default function ChatComposer({
@@ -20,20 +22,22 @@ export default function ChatComposer({
 }: ChatComposerProps) {
   const [message, setMessage] = useState("");
   const [isListening, setIsListening] = useState(false);
+  const [attachment, setAttachment] = useState<Attachment | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any>(null);
 
   useEffect(() => {
     if (!textareaRef.current) return;
 
     textareaRef.current.style.height = "0px";
-
     textareaRef.current.style.height =
       textareaRef.current.scrollHeight + "px";
   }, [message]);
 
-  // Clean up speech recognition on unmount
   useEffect(() => {
     return () => {
       if (recognitionRef.current) {
@@ -44,19 +48,17 @@ export default function ChatComposer({
 
   const handleSend = () => {
     const trimmed = message.trim();
+    if (!trimmed && !attachment) return;
+    if (disabled || isLoading || isUploading) return;
 
-    if (!trimmed) return;
-
-    if (disabled || isLoading) return;
-
-    // If recording, stop it first
     if (isListening && recognitionRef.current) {
       recognitionRef.current.stop();
     }
 
-    onSend(trimmed);
+    onSend(trimmed, attachment || undefined);
 
     setMessage("");
+    setAttachment(null);
 
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -69,6 +71,72 @@ export default function ChatComposer({
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
+    }
+  };
+
+  const processFile = (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      alert("Only image uploads are supported at this time.");
+      return;
+    }
+
+    // Limit to 5MB
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Image size must be less than 5MB.");
+      return;
+    }
+
+    setIsUploading(true);
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      setAttachment({
+        name: file.name,
+        mimeType: file.type,
+        url: e.target?.result as string,
+        size: file.size,
+      });
+      setIsUploading(false);
+    };
+    reader.onerror = () => {
+      alert("Failed to read image file.");
+      setIsUploading(false);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      processFile(file);
+    }
+    // Reset file input value so same file can be uploaded again
+    if (e.target) e.target.value = "";
+  };
+
+  const handlePaperclipClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  // Drag & drop handlers
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (disabled || isLoading) return;
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (disabled || isLoading) return;
+
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      processFile(file);
     }
   };
 
@@ -90,7 +158,6 @@ export default function ChatComposer({
       }
       setIsListening(false);
     } else {
-      // Cancel any ongoing text-to-speech playbacks
       window.speechSynthesis.cancel();
 
       try {
@@ -104,14 +171,11 @@ export default function ChatComposer({
         };
 
         recognition.onresult = (event: any) => {
-          let interimTranscript = "";
           let finalTranscript = "";
 
           for (let i = event.resultIndex; i < event.results.length; ++i) {
             if (event.results[i].isFinal) {
               finalTranscript += event.results[i][0].transcript;
-            } else {
-              interimTranscript += event.results[i][0].transcript;
             }
           }
 
@@ -142,19 +206,97 @@ export default function ChatComposer({
   };
 
   return (
-    <div className="border-t border-slate-800 bg-slate-950/80 backdrop-blur-xl px-6 py-5">
+    <div
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      className={`
+        border-t
+        border-slate-800
+        bg-slate-950/80
+        backdrop-blur-xl
+        px-6
+        py-5
+        transition-colors
+        duration-200
+        ${isDragging ? "bg-blue-600/5" : ""}
+      `}
+    >
       <div className="mx-auto max-w-4xl">
-        <div className="flex items-end gap-3 rounded-3xl border border-slate-800 bg-slate-900 p-3 shadow-xl">
-          {/* Attachment */}
+        {/* Hidden File Selector Input */}
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileChange}
+          accept="image/*"
+          className="hidden"
+        />
+
+        {/* Image Attachment Preview card */}
+        {attachment && (
+          <div className="relative inline-flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900 p-2 pr-12 mb-3 shadow-lg group">
+            <div className="relative h-14 w-14 overflow-hidden rounded-lg border border-slate-700 bg-slate-950/50">
+              <img
+                src={attachment.url}
+                alt="Upload preview"
+                className="h-full w-full object-cover"
+              />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-white truncate max-w-[150px]">
+                {attachment.name}
+              </p>
+              <p className="text-[10px] text-slate-500 mt-0.5">
+                {(attachment.size / 1024).toFixed(1)} KB
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setAttachment(null)}
+              className="absolute right-2 top-2 rounded-full p-1 bg-slate-800 text-slate-400 hover:bg-slate-750 hover:text-white transition-all shadow-sm"
+              title="Remove attachment"
+            >
+              <X size={12} />
+            </button>
+          </div>
+        )}
+
+        {/* Local File Reading Progress indicator */}
+        {isUploading && (
+          <div className="flex items-center gap-2 text-xs text-blue-400 mb-3 animate-pulse">
+            <Loader2 size={14} className="animate-spin" />
+            <span>Reading image file...</span>
+          </div>
+        )}
+
+        {/* Main Composer Box */}
+        <div
+          className={`
+            flex
+            items-end
+            gap-3
+            rounded-3xl
+            border
+            p-3
+            shadow-xl
+            bg-slate-900
+            transition-all
+            duration-250
+            ${isDragging ? "border-blue-500 scale-[1.01]" : "border-slate-800"}
+          `}
+        >
+          {/* Attachment Paperclip Button */}
           <button
             type="button"
-            disabled={disabled || isLoading}
+            onClick={handlePaperclipClick}
+            disabled={disabled || isLoading || isUploading}
             className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white disabled:opacity-50"
+            title="Attach Image"
           >
             <Paperclip size={20} />
           </button>
 
-          {/* Input */}
+          {/* Text Area Input */}
           <textarea
             ref={textareaRef}
             rows={1}
@@ -163,7 +305,11 @@ export default function ChatComposer({
             onChange={(e) => setMessage(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={
-              isListening ? "Listening... Speak now." : "Message MuthuAI..."
+              isListening
+                ? "Listening... Speak now."
+                : isDragging
+                ? "Drop image here..."
+                : "Message MuthuAI..."
             }
             className="
               min-h-[28px]
@@ -182,7 +328,7 @@ export default function ChatComposer({
           <button
             type="button"
             onClick={toggleListening}
-            disabled={disabled || isLoading}
+            disabled={disabled || isLoading || isUploading}
             className={`rounded-xl p-2 transition disabled:opacity-50 ${
               isListening
                 ? "bg-red-600 text-white animate-pulse"
@@ -197,7 +343,12 @@ export default function ChatComposer({
           <button
             type="button"
             onClick={handleSend}
-            disabled={disabled || isLoading || message.trim() === ""}
+            disabled={
+              disabled ||
+              isLoading ||
+              isUploading ||
+              (message.trim() === "" && !attachment)
+            }
             className="
               flex
               h-11

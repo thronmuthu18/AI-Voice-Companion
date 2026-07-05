@@ -31,11 +31,19 @@ export interface Chat {
   updatedAt: string;
 }
 
+export interface Attachment {
+  name: string;
+  mimeType: string;
+  url: string; // Base64 data URL
+  size: number;
+}
+
 export interface Message {
   _id: string;
   chatId: string;
   role: "user" | "assistant";
   content: string;
+  attachments?: Attachment[];
   createdAt: string;
   updatedAt: string;
 }

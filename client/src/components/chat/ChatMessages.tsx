@@ -1,12 +1,13 @@
 import { useEffect, useRef } from "react";
-import EmptyState from "./EmptyState";
 import MessageBubble from "./MessageBubble";
+import type { Attachment } from "../../types/api.types";
 
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
   timestamp?: string;
+  attachments?: Attachment[];
 }
 
 interface ChatMessagesProps {
@@ -24,37 +25,24 @@ export default function ChatMessages({
     });
   }, [messages]);
 
-  if (messages.length === 0) {
-    return <EmptyState />;
-  }
-
   return (
-    <div
-      className="
-        flex-1
-        overflow-y-auto
-        px-6
-        py-8
-      "
-    >
-      <div
-        className="
-          mx-auto
-          flex
-          max-w-4xl
-          flex-col
-          gap-6
-        "
-      >
-        {messages.map((message) => (
-          <MessageBubble
-            key={message.id}
-            role={message.role}
-            content={message.content}
-            timestamp={message.timestamp}
-          />
-        ))}
-
+    <div className="flex-1 overflow-y-auto p-6 space-y-6">
+      <div className="mx-auto max-w-4xl space-y-6">
+        {messages.length === 0 ? (
+          <div className="flex h-[320px] items-center justify-center text-slate-500">
+            Send a message to start the conversation
+          </div>
+        ) : (
+          messages.map((msg) => (
+            <MessageBubble
+              key={msg.id}
+              role={msg.role}
+              content={msg.content}
+              timestamp={msg.timestamp}
+              attachments={msg.attachments}
+            />
+          ))
+        )}
         <div ref={bottomRef} />
       </div>
     </div>

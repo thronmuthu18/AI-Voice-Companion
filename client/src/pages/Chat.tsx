@@ -20,7 +20,7 @@ export default function Chat() {
     }
   }, [currentChat?._id, fetchMessages]);
 
-  const handleSend = async (content: string) => {
+  const handleSend = async (content: string, attachment?: any) => {
     try {
       let chatId = currentChat?._id;
 
@@ -30,7 +30,7 @@ export default function Chat() {
         chatId = newChat._id;
       }
 
-      await sendMessage(chatId, content);
+      await sendMessage(chatId, content, attachment);
 
       // Refresh the chat list so the title (updated on server) refreshes
       await fetchChats();
@@ -44,6 +44,7 @@ export default function Chat() {
     id: msg._id,
     role: msg.role || (msg as any).sender || "user",
     content: msg.content,
+    attachments: msg.attachments,
     timestamp: msg.createdAt
       ? new Date(msg.createdAt).toLocaleTimeString([], {
           hour: "2-digit",

@@ -1,5 +1,5 @@
 import api from "./api";
-import type { Message } from "../types/api.types";
+import type { Message, Attachment } from "../types/api.types";
 
 export class MessageService {
   async getMessages(
@@ -14,7 +14,8 @@ export class MessageService {
 
   async sendMessage(
     chatId: string,
-    content: string
+    content: string,
+    attachment?: Attachment
   ): Promise<Message> {
     const response = await api.post(
       "/message",
@@ -22,6 +23,7 @@ export class MessageService {
         chatId,
         role: "user",
         content,
+        attachment,
       }
     );
 

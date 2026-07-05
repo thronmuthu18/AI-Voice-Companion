@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { messageService } from "../services/message.service";
 import { aiService } from "../services/ai.service";
-import type { Message } from "../types/api.types";
+import type { Message, Attachment } from "../types/api.types";
 
 interface MessageState {
   messages: Message[];
@@ -10,7 +10,8 @@ interface MessageState {
   fetchMessages: (chatId: string) => Promise<void>;
   sendMessage: (
     chatId: string,
-    content: string
+    content: string,
+    attachment?: Attachment
   ) => Promise<void>;
   clearMessages: () => void;
 }
@@ -35,14 +36,15 @@ export const useMessageStore = create<MessageState>((set) => ({
     }
   },
 
-  async sendMessage(chatId, content) {
+  async sendMessage(chatId, content, attachment) {
     set({ isLoading: true });
 
     try {
       // Save user message in the database
       const userMessage = await messageService.sendMessage(
         chatId,
-        content
+        content,
+        attachment
       );
 
       // Append user message to store state immediately

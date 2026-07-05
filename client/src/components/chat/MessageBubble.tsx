@@ -1,16 +1,19 @@
 import { Copy, Check, Volume2, VolumeX } from "lucide-react";
 import { useState, useEffect } from "react";
+import type { Attachment } from "../../types/api.types";
 
 interface MessageBubbleProps {
   role: "user" | "assistant";
   content: string;
   timestamp?: string;
+  attachments?: Attachment[];
 }
 
 export default function MessageBubble({
   role,
   content,
   timestamp,
+  attachments,
 }: MessageBubbleProps) {
   const [copied, setCopied] = useState(false);
   const [isPlayingSpeech, setIsPlayingSpeech] = useState(false);
@@ -115,6 +118,18 @@ export default function MessageBubble({
             {copied ? <Check size={16} /> : <Copy size={16} />}
           </button>
         </div>
+
+        {/* Display Attachments */}
+        {attachments && attachments.map((att, idx) => (
+          att.mimeType.startsWith("image/") && (
+            <img
+              key={idx}
+              src={att.url}
+              alt={att.name}
+              className="max-h-60 max-w-full rounded-lg object-contain mb-3 border border-slate-800 bg-slate-950/20"
+            />
+          )
+        ))}
 
         <p className="whitespace-pre-wrap break-words pr-8">
           {content}
