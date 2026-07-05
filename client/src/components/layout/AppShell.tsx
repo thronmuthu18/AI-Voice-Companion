@@ -6,10 +6,14 @@ import type { ReactNode } from "react";
 
 interface AppShellProps {
   children: ReactNode;
+  noPadding?: boolean;
+  noScroll?: boolean;
 }
 
 export default function AppShell({
   children,
+  noPadding = false,
+  noScroll = false,
 }: AppShellProps) {
   return (
     <div className="flex h-screen bg-slate-950 text-white overflow-hidden">
@@ -25,7 +29,7 @@ export default function AppShell({
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header />
 
-        <MainContent>
+        <MainContent noPadding={noPadding} noScroll={noScroll}>
           {children}
         </MainContent>
       </div>

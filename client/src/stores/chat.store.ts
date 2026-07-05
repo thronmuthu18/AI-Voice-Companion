@@ -6,26 +6,29 @@ interface ChatState {
   chats: Chat[];
   currentChat: Chat | null;
   isLoading: boolean;
+  searchQuery: string;
 
-  fetchChats: () => Promise<void>;
+  fetchChats: (archived?: boolean) => Promise<void>;
   createChat: (title: string) => Promise<Chat>;
-  selectChat: (chat: Chat) => void;
+  selectChat: (chat: Chat | null) => void;
   renameChat: (chatId: string, title: string) => Promise<void>;
   pinChat: (chatId: string) => Promise<void>;
   archiveChat: (chatId: string) => Promise<void>;
   deleteChat: (chatId: string) => Promise<void>;
+  setSearchQuery: (query: string) => void;
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
   chats: [],
   currentChat: null,
   isLoading: false,
+  searchQuery: "",
 
-  async fetchChats() {
+  async fetchChats(archived = false) {
     set({ isLoading: true });
 
     try {
-      const chats = await chatService.getChats();
+      const chats = await chatService.getChats(archived);
 
       set({
         chats,
@@ -70,12 +73,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   async pinChat(chatId) {
     await chatService.pinChat(chatId);
-    await get().fetchChats();
+    const isArchived = window.location.pathname === "/archived";
+    await get().fetchChats(isArchived);
   },
 
   async archiveChat(chatId) {
     await chatService.archiveChat(chatId);
-    await get().fetchChats();
+    const isArchived = window.location.pathname === "/archived";
+    await get().fetchChats(isArchived);
   },
 
   async deleteChat(chatId) {
@@ -90,5 +95,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
           ? null
           : state.currentChat,
     }));
+  },
+
+  setSearchQuery(query) {
+    set({ searchQuery: query });
   },
 }));

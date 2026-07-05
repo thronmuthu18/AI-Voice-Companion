@@ -39,8 +39,9 @@ export class ChatController {
     try {
 
       const userId = (req as any).user.userId;
+      const archived = req.query.archived === "true";
 
-      const chats = await chatService.getChats(userId);
+      const chats = await chatService.getChats(userId, archived);
 
       return res.status(200).json({
         success: true,

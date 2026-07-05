@@ -1,3 +1,5 @@
+import Chat from "./Chat";
+
 export default function Archived() {
-  return null;
+  return <Chat />;
 }

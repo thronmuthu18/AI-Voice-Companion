@@ -2,8 +2,10 @@ import api from "./api";
 import type { Chat } from "../types/api.types";
 
 export class ChatService {
-  async getChats(): Promise<Chat[]> {
-    const response = await api.get("/chat");
+  async getChats(archived = false): Promise<Chat[]> {
+    const response = await api.get("/chat", {
+      params: { archived }
+    });
 
     return response.data.chats;
   }

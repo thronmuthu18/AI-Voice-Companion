@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import ChatLayout from "../components/chat/ChatLayout";
+import AppShell from "../components/layout/AppShell";
 import ChatMessages, {
   ChatMessage,
 } from "../components/chat/ChatMessages";
@@ -56,8 +56,8 @@ export default function Chat() {
   }));
 
   return (
-    <ChatLayout>
-      <div className="flex flex-1 flex-col">
+    <AppShell noPadding noScroll>
+      <div className="flex flex-1 flex-col h-full overflow-hidden">
         <ChatMessages messages={formattedMessages} />
 
         <ChatComposer
@@ -65,6 +65,6 @@ export default function Chat() {
           isLoading={isLoading}
         />
       </div>
-    </ChatLayout>
+    </AppShell>
   );
 }

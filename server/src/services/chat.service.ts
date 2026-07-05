@@ -13,11 +13,12 @@ export class ChatService {
   }
 
   async getChats(
-    userId: string
+    userId: string,
+    archived: boolean = false
   ) {
     return await Chat.find({
       userId,
-      isArchived: false,
+      isArchived: archived,
     }).sort({
       isPinned: -1,
       updatedAt: -1,

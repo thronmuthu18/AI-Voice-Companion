@@ -2,10 +2,14 @@ import type { ReactNode } from "react";
 
 interface MainContentProps {
   children?: ReactNode;
+  noPadding?: boolean;
+  noScroll?: boolean;
 }
 
 export default function MainContent({
   children,
+  noPadding = false,
+  noScroll = false,
 }: MainContentProps) {
   return (
     <main
@@ -17,12 +21,12 @@ export default function MainContent({
       "
     >
       <div
-        className="
+        className={`
           h-full
           w-full
-          overflow-y-auto
-          p-6
-        "
+          ${noScroll ? "overflow-hidden" : "overflow-y-auto"}
+          ${noPadding ? "" : "p-6"}
+        `}
       >
         {children}
       </div>
