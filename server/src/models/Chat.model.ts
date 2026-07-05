@@ -1,26 +1,56 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose, { Schema, Document } from "mongoose";
 
-export interface IChat extends Omit<Document, 'model'> {
+export interface IChat extends Document {
   userId: mongoose.Types.ObjectId;
+
   title: string;
+
+  lastMessage?: string;
+
   isPinned: boolean;
+
   isArchived: boolean;
-  isDeleted: boolean;
-  model: string;
+
   createdAt: Date;
+
   updatedAt: Date;
 }
 
-const chatSchema = new Schema<IChat>(
+const ChatSchema = new Schema<IChat>(
   {
-    userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    title: { type: String, default: 'New Chat' },
-    isPinned: { type: Boolean, default: false },
-    isArchived: { type: Boolean, default: false },
-    isDeleted: { type: Boolean, default: false },
-    model: { type: String, default: 'gpt-4o' },
+    userId: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+
+    title: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    lastMessage: {
+      type: String,
+      default: "",
+    },
+
+    isPinned: {
+      type: Boolean,
+      default: false,
+    },
+
+    isArchived: {
+      type: Boolean,
+      default: false,
+    },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+  }
 );
 
-export const Chat = mongoose.model<IChat>('Chat', chatSchema);
+export default mongoose.model<IChat>(
+  "Chat",
+  ChatSchema
+);

@@ -1,23 +1,43 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose, { Schema, Document } from "mongoose";
 
-export interface IMessage extends Omit<Document, 'model'> {
+export interface IMessage extends Document {
   chatId: mongoose.Types.ObjectId;
-  role: 'system' | 'user' | 'assistant';
+
+  sender: "user" | "assistant" | "system";
+
   content: string;
-  tokens?: number;
-  model: string;
+
   createdAt: Date;
+
+  updatedAt: Date;
 }
 
-const messageSchema = new Schema<IMessage>(
+const MessageSchema = new Schema<IMessage>(
   {
-    chatId: { type: Schema.Types.ObjectId, ref: 'Chat', required: true },
-    role: { type: String, enum: ['system', 'user', 'assistant'], required: true },
-    content: { type: String, required: true },
-    tokens: { type: Number },
-    model: { type: String, required: true },
+    chatId: {
+      type: Schema.Types.ObjectId,
+      ref: "Chat",
+      required: true,
+    },
+
+    sender: {
+      type: String,
+      enum: ["user", "assistant", "system"],
+      required: true,
+    },
+
+    content: {
+      type: String,
+      required: true,
+      trim: true,
+    },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+  }
 );
 
-export const Message = mongoose.model<IMessage>('Message', messageSchema);
+export default mongoose.model<IMessage>(
+  "Message",
+  MessageSchema
+);

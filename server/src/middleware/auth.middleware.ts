@@ -1,21 +1,12 @@
 import { Request, Response, NextFunction } from "express";
 import { verifyAccessToken } from "../utils/jwt";
 
-export interface AuthRequest extends Request {
-  user?: {
-    userId: string;
-    email: string;
-    role: string;
-  };
-}
-
 export function authenticate(
-  req: AuthRequest,
+  req: Request,
   res: Response,
   next: NextFunction
 ): void {
   try {
-    // Authorization Header
     const authHeader = req.headers.authorization;
 
     if (!authHeader) {
@@ -26,7 +17,6 @@ export function authenticate(
       return;
     }
 
-    // Check Bearer Token
     if (!authHeader.startsWith("Bearer ")) {
       res.status(401).json({
         success: false,
@@ -35,26 +25,17 @@ export function authenticate(
       return;
     }
 
-    // Extract Token
-    const token = authHeader.split(" ")[1];
+    const token = authHeader.substring(7);
 
-    // Verify Token
     const payload = verifyAccessToken(token);
 
-    // Attach User to Request
-    req.user = {
-      userId: payload.userId,
-      email: payload.email,
-      role: payload.role,
-    };
+    (req as any).user = payload;
 
-    // Continue to Next Middleware
     next();
-  } catch (error) {
+  } catch {
     res.status(401).json({
       success: false,
       message: "Invalid or expired token",
     });
-    return;
   }
 }

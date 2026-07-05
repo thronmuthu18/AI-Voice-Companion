@@ -10,6 +10,8 @@ const envSchema = z.object({
   CLIENT_URL: z.string().url().default('http://localhost:3000'),
   JWT_SECRET: z.string().min(32),
   JWT_EXPIRES_IN: z.string().default('1d'),
+
+  OPENAI_API_KEY: z.string().min(1),
 });
 
 export type Env = z.infer<typeof envSchema>;
