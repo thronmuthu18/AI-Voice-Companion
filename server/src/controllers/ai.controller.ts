@@ -25,6 +25,33 @@ export class AIController {
         message
       );
 
+      const isImageRequest = message.trim().toLowerCase().startsWith("/image");
+
+      if (isImageRequest) {
+        const imagePrompt = message.trim().substring(6).trim() || "beautiful landscape";
+        const imageBase64 = await aiService.generateImage(imagePrompt);
+
+        const attachment = {
+          name: `${imagePrompt.substring(0, 20).replace(/\s+/g, "_")}.png`,
+          mimeType: "image/png",
+          url: imageBase64,
+          size: imageBase64.length,
+        };
+
+        const assistantMessage = await messageService.createMessage(
+          chatId,
+          "assistant",
+          `Here is the image generated for: "${imagePrompt}"`,
+          [attachment]
+        );
+
+        return res.status(200).json({
+          success: true,
+          assistantMessage,
+          response: `Here is the image generated for: "${imagePrompt}"`,
+        });
+      }
+
       // Generate completion response
       const aiReply =
         await aiService.generateResponse(chatId);
@@ -85,6 +112,45 @@ export class AIController {
         "keep-alive"
       );
 
+      const isImageRequest = message.trim().toLowerCase().startsWith("/image");
+
+      if (isImageRequest) {
+        const imagePrompt = message.trim().substring(6).trim() || "beautiful landscape";
+
+        res.write(
+          `data: ${JSON.stringify({
+            token: `🎨 Generating image for: "${imagePrompt}"...\n(This will take about 5-10 seconds)`,
+          })}\n\n`
+        );
+
+        // Generate the image
+        const imageBase64 = await aiService.generateImage(imagePrompt);
+
+        const attachment = {
+          name: `${imagePrompt.substring(0, 20).replace(/\s+/g, "_")}.png`,
+          mimeType: "image/png",
+          url: imageBase64,
+          size: imageBase64.length,
+        };
+
+        // Save assistant response in database with generated image attachment
+        await messageService.createMessage(
+          chatId,
+          "assistant",
+          `Here is the image generated for: "${imagePrompt}"`,
+          [attachment]
+        );
+
+        res.write(
+          `data: ${JSON.stringify({
+            done: true,
+          })}\n\n`
+        );
+
+        res.end();
+        return;
+      }
+
       const stream =
         await streamService.streamResponse(chatId);
 
@@ -126,6 +192,18 @@ export class AIController {
             error.message ||
             "Internal Server Error",
         });
+      } else {
+        res.write(
+          `data: ${JSON.stringify({
+            token: `\n❌ Image generation error: ${error.message}`,
+          })}\n\n`
+        );
+        res.write(
+          `data: ${JSON.stringify({
+            done: true,
+          })}\n\n`
+        );
+        res.end();
       }
 
       return;

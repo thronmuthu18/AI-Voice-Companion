@@ -1,4 +1,13 @@
-import { Copy, Check, Volume2, VolumeX, FileText } from "lucide-react";
+import {
+  Copy,
+  Check,
+  Volume2,
+  VolumeX,
+  FileText,
+  Maximize2,
+  Download,
+  X,
+} from "lucide-react";
 import { useState, useEffect } from "react";
 import type { Attachment } from "../../types/api.types";
 
@@ -17,6 +26,7 @@ export default function MessageBubble({
 }: MessageBubbleProps) {
   const [copied, setCopied] = useState(false);
   const [isPlayingSpeech, setIsPlayingSpeech] = useState(false);
+  const [expandedImageUrl, setExpandedImageUrl] = useState<string | null>(null);
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(content);
@@ -33,13 +43,10 @@ export default function MessageBubble({
       window.speechSynthesis.cancel();
       setIsPlayingSpeech(false);
     } else {
-      // Cancel any ongoing playbacks first
       window.speechSynthesis.cancel();
 
       const utterance = new SpeechSynthesisUtterance(content);
 
-      // Auto-detect Tamil vs English
-      // Tamil unicode block range: \u0B80-\u0BFF
       const isTamil = /[\u0B80-\u0BFF]/.test(content);
       utterance.lang = isTamil ? "ta-IN" : "en-US";
 
@@ -55,7 +62,6 @@ export default function MessageBubble({
     }
   };
 
-  // Clean up speech synthesis on bubble unmount
   useEffect(() => {
     return () => {
       if (isPlayingSpeech) {
@@ -88,7 +94,7 @@ export default function MessageBubble({
         `}
       >
         {/* Action Controls */}
-        <div className="absolute right-3 top-3 flex items-center gap-1.5">
+        <div className="absolute right-3 top-3 flex items-center gap-1.5 font-sans z-10">
           {!isUser && (
             <button
               onClick={handleSpeak}
@@ -120,52 +126,92 @@ export default function MessageBubble({
         </div>
 
         {/* Display Attachments */}
-        {attachments && attachments.map((att, idx) => {
-          const isImage = att.mimeType.startsWith("image/");
-          if (isImage) {
+        {attachments &&
+          attachments.map((att, idx) => {
+            const isImage = att.mimeType.startsWith("image/");
+            if (isImage) {
+              return (
+                <div
+                  key={idx}
+                  className="
+                    relative
+                    group/img
+                    max-w-full
+                    inline-block
+                    rounded-xl
+                    overflow-hidden
+                    border
+                    border-slate-800
+                    bg-slate-950/20
+                    mb-3
+                    cursor-pointer
+                  "
+                >
+                  <img
+                    src={att.url}
+                    alt={att.name}
+                    className="max-h-60 max-w-full object-contain transition duration-300 group-hover/img:scale-[1.02]"
+                  />
+                  {/* Glassmorphic hover overlay */}
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition duration-200 flex items-center justify-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedImageUrl(att.url)}
+                      className="p-2 rounded-xl bg-slate-900/80 border border-slate-700 text-white hover:bg-slate-800 transition"
+                      title="Expand Image"
+                    >
+                      <Maximize2 size={16} />
+                    </button>
+
+                    <a
+                      href={att.url}
+                      download={att.name}
+                      onClick={(e) => e.stopPropagation()}
+                      className="p-2 rounded-xl bg-slate-900/80 border border-slate-700 text-white hover:bg-slate-800 transition flex items-center justify-center"
+                      title="Download Image"
+                    >
+                      <Download size={16} />
+                    </a>
+                  </div>
+                </div>
+              );
+            }
             return (
-              <img
+              <a
                 key={idx}
-                src={att.url}
-                alt={att.name}
-                className="max-h-60 max-w-full rounded-lg object-contain mb-3 border border-slate-800 bg-slate-950/20"
-              />
+                href={att.url}
+                download={att.name}
+                className="
+                  flex
+                  items-center
+                  gap-3
+                  rounded-xl
+                  border
+                  border-slate-800
+                  bg-slate-950/45
+                  p-3
+                  mb-3
+                  max-w-md
+                  hover:bg-slate-900/50
+                  transition
+                  cursor-pointer
+                  text-slate-100
+                "
+              >
+                <div className="p-2 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-500">
+                  <FileText size={20} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold truncate text-white">
+                    {att.name}
+                  </p>
+                  <p className="text-[10px] text-slate-500 mt-0.5">
+                    {(att.size / 1024).toFixed(1)} KB • Document
+                  </p>
+                </div>
+              </a>
             );
-          }
-          return (
-            <a
-              key={idx}
-              href={att.url}
-              download={att.name}
-              className="
-                flex
-                items-center
-                gap-3
-                rounded-xl
-                border
-                border-slate-800
-                bg-slate-950/45
-                p-3
-                mb-3
-                max-w-md
-                hover:bg-slate-900/50
-                transition
-                cursor-pointer
-                text-slate-100
-              "
-            >
-              <div className="p-2 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-500">
-                <FileText size={20} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold truncate text-white">{att.name}</p>
-                <p className="text-[10px] text-slate-500 mt-0.5">
-                  {(att.size / 1024).toFixed(1)} KB • Document
-                </p>
-              </div>
-            </a>
-          );
-        })}
+          })}
 
         <p className="whitespace-pre-wrap break-words pr-8">
           {content}
@@ -177,6 +223,60 @@ export default function MessageBubble({
           </p>
         )}
       </div>
+
+      {/* Full screen modal overlay for image zoom */}
+      {expandedImageUrl && (
+        <div
+          onClick={() => setExpandedImageUrl(null)}
+          className="
+            fixed
+            inset-0
+            z-[100]
+            bg-black/90
+            backdrop-blur-md
+            flex
+            items-center
+            justify-center
+            p-4
+            cursor-zoom-out
+            animate-fade-in
+          "
+        >
+          <img
+            src={expandedImageUrl}
+            alt="Expanded preview"
+            className="
+              max-w-full
+              max-h-full
+              object-contain
+              rounded-xl
+              shadow-2xl
+              transition-transform
+              duration-200
+            "
+          />
+          <button
+            type="button"
+            onClick={() => setExpandedImageUrl(null)}
+            className="
+              absolute
+              top-6
+              right-6
+              rounded-full
+              p-2.5
+              bg-slate-900/80
+              border
+              border-slate-700
+              text-white
+              hover:bg-slate-800
+              transition
+            "
+            title="Close Preview"
+          >
+            <X size={20} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
