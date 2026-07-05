@@ -19,20 +19,17 @@ export class AIController {
         });
       }
 
-      const userMessage = await messageService.createMessage(
-        chatId,
-        "user",
-        message
-      );
-
+      // Update chat title if it's the first message
       await chatService.updateChatTitle(
         chatId,
         message
       );
 
+      // Generate completion response
       const aiReply =
         await aiService.generateResponse(chatId);
 
+      // Save assistant response in database
       const assistantMessage =
         await messageService.createMessage(
           chatId,
@@ -42,7 +39,6 @@ export class AIController {
 
       return res.status(200).json({
         success: true,
-        userMessage,
         assistantMessage,
         response: aiReply,
       });
@@ -70,12 +66,7 @@ export class AIController {
         return;
       }
 
-      await messageService.createMessage(
-        chatId,
-        "user",
-        message
-      );
-
+      // Update chat title if it's the first message
       await chatService.updateChatTitle(
         chatId,
         message
@@ -112,6 +103,7 @@ export class AIController {
         );
       }
 
+      // Save complete assistant message to database once streaming completes
       await messageService.createMessage(
         chatId,
         "assistant",
