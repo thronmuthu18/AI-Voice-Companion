@@ -1,4 +1,4 @@
-import { Copy, Check, Volume2, VolumeX } from "lucide-react";
+import { Copy, Check, Volume2, VolumeX, FileText } from "lucide-react";
 import { useState, useEffect } from "react";
 import type { Attachment } from "../../types/api.types";
 
@@ -120,16 +120,52 @@ export default function MessageBubble({
         </div>
 
         {/* Display Attachments */}
-        {attachments && attachments.map((att, idx) => (
-          att.mimeType.startsWith("image/") && (
-            <img
+        {attachments && attachments.map((att, idx) => {
+          const isImage = att.mimeType.startsWith("image/");
+          if (isImage) {
+            return (
+              <img
+                key={idx}
+                src={att.url}
+                alt={att.name}
+                className="max-h-60 max-w-full rounded-lg object-contain mb-3 border border-slate-800 bg-slate-950/20"
+              />
+            );
+          }
+          return (
+            <a
               key={idx}
-              src={att.url}
-              alt={att.name}
-              className="max-h-60 max-w-full rounded-lg object-contain mb-3 border border-slate-800 bg-slate-950/20"
-            />
-          )
-        ))}
+              href={att.url}
+              download={att.name}
+              className="
+                flex
+                items-center
+                gap-3
+                rounded-xl
+                border
+                border-slate-800
+                bg-slate-950/45
+                p-3
+                mb-3
+                max-w-md
+                hover:bg-slate-900/50
+                transition
+                cursor-pointer
+                text-slate-100
+              "
+            >
+              <div className="p-2 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-500">
+                <FileText size={20} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold truncate text-white">{att.name}</p>
+                <p className="text-[10px] text-slate-500 mt-0.5">
+                  {(att.size / 1024).toFixed(1)} KB • Document
+                </p>
+              </div>
+            </a>
+          );
+        })}
 
         <p className="whitespace-pre-wrap break-words pr-8">
           {content}

@@ -5,6 +5,7 @@ export interface IAttachment {
   mimeType: string;
   url: string; // Base64 data URL
   size: number;
+  extractedText?: string;
 }
 
 export interface IMessage extends Document {
@@ -47,6 +48,7 @@ const MessageSchema = new Schema<IMessage>(
         mimeType: { type: String, required: true },
         url: { type: String, required: true },
         size: { type: Number, required: true },
+        extractedText: { type: String },
       },
     ],
   },
