@@ -1,16 +1,18 @@
 import api from "./api";
-import type { AIChatResponse } from "../types/api.types";
+import type { AIChatResponse, Attachment } from "../types/api.types";
 
 export class AIService {
   async generateResponse(
     chatId: string,
-    message: string
+    message: string,
+    attachments?: Attachment[]
   ): Promise<AIChatResponse> {
     const response = await api.post<AIChatResponse>(
       "/ai/chat",
       {
         chatId,
         message,
+        attachments,
       }
     );
 
@@ -21,7 +23,8 @@ export class AIService {
     chatId: string,
     message: string,
     onMessage: (token: string) => void,
-    onComplete?: () => void
+    onComplete?: () => void,
+    attachments?: Attachment[]
   ): Promise<void> {
     const token = localStorage.getItem(
       "muthuai_access_token"
@@ -38,6 +41,7 @@ export class AIService {
         body: JSON.stringify({
           chatId,
           message,
+          attachments: attachments || [],
         }),
       }
     );
@@ -64,16 +68,22 @@ export class AIService {
         );
 
       for (const line of lines) {
-        const json = JSON.parse(
-          line.replace("data:", "").trim()
-        );
+        try {
+          const json = JSON.parse(
+            line.replace("data:", "").trim()
+          );
 
-        if (json.done) {
-          onComplete?.();
-          continue;
+          if (json.done) {
+            onComplete?.();
+            continue;
+          }
+
+          if (json.token) {
+            onMessage(json.token);
+          }
+        } catch {
+          // skip malformed SSE lines
         }
-
-        onMessage(json.token);
       }
     }
   }

@@ -12,6 +12,7 @@ import messageRouter from "./message.routes";
 
 import aiRouter from "./ai.routes";
 
+import uploadRouter from "./upload.routes";
 
 export function registerRoutes(app: Application): void {
   app.use("/api", healthRouter);
@@ -23,6 +24,8 @@ export function registerRoutes(app: Application): void {
   app.use("/api/chat", chatRouter);
 
   app.use("/api/message", messageRouter);
-  
+
   app.use("/api/ai", aiRouter);
+
+  app.use("/api/upload", uploadRouter);
 }

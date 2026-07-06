@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import type { Attachment } from "../../types/api.types";
+import { API_BASE_URL } from "../../lib/constants";
 
 interface MessageBubbleProps {
   role: "user" | "assistant";
@@ -48,7 +49,31 @@ export default function MessageBubble({
       const utterance = new SpeechSynthesisUtterance(content);
 
       const isTamil = /[\u0B80-\u0BFF]/.test(content);
-      utterance.lang = isTamil ? "ta-IN" : "en-US";
+      const targetLang = isTamil ? "ta-IN" : "en-US";
+      utterance.lang = targetLang;
+
+      const voices = window.speechSynthesis.getVoices();
+      const matchingVoices = voices.filter(
+        (v) =>
+          v.lang.startsWith(targetLang) ||
+          v.lang.startsWith(isTamil ? "ta" : "en")
+      );
+
+      const bestVoice =
+        matchingVoices.find((v) =>
+          v.name.toLowerCase().includes("google")
+        ) ||
+        matchingVoices.find((v) =>
+          v.name.toLowerCase().includes("microsoft")
+        ) ||
+        matchingVoices.find((v) =>
+          v.name.toLowerCase().includes("natural")
+        ) ||
+        matchingVoices[0];
+
+      if (bestVoice) {
+        utterance.voice = bestVoice;
+      }
 
       utterance.onend = () => {
         setIsPlayingSpeech(false);
@@ -71,6 +96,7 @@ export default function MessageBubble({
   }, [isPlayingSpeech]);
 
   const isUser = role === "user";
+  const backendRoot = API_BASE_URL.replace("/api", "");
 
   return (
     <div
@@ -129,6 +155,11 @@ export default function MessageBubble({
         {attachments &&
           attachments.map((att, idx) => {
             const isImage = att.mimeType.startsWith("image/");
+            // Build full URL if relative
+            const fullUrl = att.url.startsWith("http") || att.url.startsWith("data:")
+              ? att.url
+              : `${backendRoot}${att.url}`;
+
             if (isImage) {
               return (
                 <div
@@ -148,7 +179,7 @@ export default function MessageBubble({
                   "
                 >
                   <img
-                    src={att.url}
+                    src={fullUrl}
                     alt={att.name}
                     className="max-h-60 max-w-full object-contain transition duration-300 group-hover/img:scale-[1.02]"
                   />
@@ -156,7 +187,7 @@ export default function MessageBubble({
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition duration-200 flex items-center justify-center gap-3">
                     <button
                       type="button"
-                      onClick={() => setExpandedImageUrl(att.url)}
+                      onClick={() => setExpandedImageUrl(fullUrl)}
                       className="p-2 rounded-xl bg-slate-900/80 border border-slate-700 text-white hover:bg-slate-800 transition"
                       title="Expand Image"
                     >
@@ -164,7 +195,7 @@ export default function MessageBubble({
                     </button>
 
                     <a
-                      href={att.url}
+                      href={fullUrl}
                       download={att.name}
                       onClick={(e) => e.stopPropagation()}
                       className="p-2 rounded-xl bg-slate-900/80 border border-slate-700 text-white hover:bg-slate-800 transition flex items-center justify-center"
@@ -179,7 +210,7 @@ export default function MessageBubble({
             return (
               <a
                 key={idx}
-                href={att.url}
+                href={fullUrl}
                 download={att.name}
                 className="
                   flex

@@ -6,31 +6,52 @@ import {
   SendHorizontal,
   X,
   FileText,
+  AlertCircle,
+  RotateCcw,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { Attachment } from "../../types/api.types";
+import api from "../../services/api";
+import { API_BASE_URL } from "../../lib/constants";
 
 interface ChatComposerProps {
   disabled?: boolean;
   isLoading?: boolean;
-  onSend: (message: string, attachment?: Attachment) => void;
+  onSend: (message: string, attachments?: Attachment[]) => void;
+  droppedFiles?: { files: File[]; timestamp: number } | null;
+}
+
+interface UploadingFile {
+  id: string;
+  name: string;
+  progress: number;
+  error: string | null;
+  file: File;
 }
 
 export default function ChatComposer({
   disabled = false,
   isLoading = false,
   onSend,
+  droppedFiles = null,
 }: ChatComposerProps) {
   const [message, setMessage] = useState("");
   const [isListening, setIsListening] = useState(false);
-  const [attachment, setAttachment] = useState<Attachment | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
+  
+  // Plural attachments and upload states
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
+
+  // Multilingual Speech Input Lang selection state
+  const [speechLang, setSpeechLang] = useState(() => {
+    return localStorage.getItem("muthuai_speech_lang") || "en-US";
+  });
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any>(null);
 
+  // Auto-resize textarea on input
   useEffect(() => {
     if (!textareaRef.current) return;
 
@@ -38,6 +59,13 @@ export default function ChatComposer({
     textareaRef.current.style.height =
       textareaRef.current.scrollHeight + "px";
   }, [message]);
+
+  // Handle forwarded dropped files from AppShell / Chat view
+  useEffect(() => {
+    if (droppedFiles && droppedFiles.files.length > 0) {
+      droppedFiles.files.forEach(uploadFile);
+    }
+  }, [droppedFiles]);
 
   useEffect(() => {
     return () => {
@@ -47,19 +75,84 @@ export default function ChatComposer({
     };
   }, []);
 
+  const uploadFile = async (file: File) => {
+    const fileId = Math.random().toString(36).substring(2, 9);
+    
+    // Add to active upload list
+    setUploadingFiles((prev) => [
+      ...prev,
+      { id: fileId, name: file.name, progress: 0, error: null, file },
+    ]);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await api.post("/upload", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+        onUploadProgress: (progressEvent) => {
+          const progress = Math.round(
+            (progressEvent.loaded * 100) / (progressEvent.total || 1)
+          );
+          setUploadingFiles((prev) =>
+            prev.map((f) => (f.id === fileId ? { ...f, progress } : f))
+          );
+        },
+      });
+
+      const att: Attachment = response.data.attachment;
+      setAttachments((prev) => [...prev, att]);
+      
+      // Remove from active uploads on completion
+      setUploadingFiles((prev) => prev.filter((f) => f.id !== fileId));
+    } catch (err: any) {
+      console.error("File upload failed:", file.name, err);
+      const errorMsg =
+        err.response?.data?.message || "Upload failed. Click to retry.";
+      setUploadingFiles((prev) =>
+        prev.map((f) =>
+          f.id === fileId ? { ...f, error: errorMsg, progress: 0 } : f
+        )
+      );
+    }
+  };
+
+  const retryUpload = (id: string) => {
+    const target = uploadingFiles.find((f) => f.id === id);
+    if (!target) return;
+
+    // Reset error state
+    setUploadingFiles((prev) =>
+      prev.map((f) => (f.id === id ? { ...f, error: null, progress: 0 } : f))
+    );
+
+    uploadFile(target.file);
+  };
+
+  const cancelUpload = (id: string) => {
+    setUploadingFiles((prev) => prev.filter((f) => f.id !== id));
+  };
+
+  const removeAttachment = (idx: number) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== idx));
+  };
+
   const handleSend = () => {
     const trimmed = message.trim();
-    if (!trimmed && !attachment) return;
-    if (disabled || isLoading || isUploading) return;
+    if (!trimmed && attachments.length === 0) return;
+    if (disabled || isLoading || uploadingFiles.some((f) => !f.error)) return;
 
     if (isListening && recognitionRef.current) {
       recognitionRef.current.stop();
     }
 
-    onSend(trimmed, attachment || undefined);
+    onSend(trimmed, attachments);
 
     setMessage("");
-    setAttachment(null);
+    setAttachments([]);
+    setUploadingFiles([]);
 
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -75,71 +168,10 @@ export default function ChatComposer({
     }
   };
 
-  const processFile = (file: File) => {
-    let mimeType = file.type;
-
-    // Normalize file type if empty (browser fails to map extensions)
-    if (!mimeType) {
-      if (file.name.endsWith(".md")) {
-        mimeType = "text/markdown";
-      } else if (file.name.endsWith(".txt")) {
-        mimeType = "text/plain";
-      } else if (file.name.endsWith(".pdf")) {
-        mimeType = "application/pdf";
-      } else if (file.name.endsWith(".docx")) {
-        mimeType =
-          "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-      } else if (file.name.endsWith(".doc")) {
-        mimeType = "application/msword";
-      }
-    }
-
-    const isImage = mimeType.startsWith("image/");
-    const isDoc =
-      mimeType === "application/pdf" ||
-      mimeType ===
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-      mimeType === "application/msword" ||
-      mimeType === "text/plain" ||
-      mimeType === "text/markdown" ||
-      mimeType.startsWith("text/");
-
-    if (!isImage && !isDoc) {
-      alert(
-        "Unsupported file type. Please upload an image, PDF, DOCX, TXT, or Markdown document."
-      );
-      return;
-    }
-
-    // Limit to 5MB
-    if (file.size > 5 * 1024 * 1024) {
-      alert("File size must be less than 5MB.");
-      return;
-    }
-
-    setIsUploading(true);
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      setAttachment({
-        name: file.name,
-        mimeType,
-        url: e.target?.result as string,
-        size: file.size,
-      });
-      setIsUploading(false);
-    };
-    reader.onerror = () => {
-      alert("Failed to read file.");
-      setIsUploading(false);
-    };
-    reader.readAsDataURL(file);
-  };
-
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      processFile(file);
+    const files = Array.from(e.target.files || []);
+    if (files.length > 0) {
+      files.forEach(uploadFile);
     }
     if (e.target) e.target.value = "";
   };
@@ -148,25 +180,27 @@ export default function ChatComposer({
     fileInputRef.current?.click();
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     if (disabled || isLoading) return;
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = () => {
-    setIsDragging(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    if (disabled || isLoading) return;
-
-    const file = e.dataTransfer.files?.[0];
-    if (file) {
-      processFile(file);
+    const items = e.clipboardData?.items;
+    if (items) {
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf("image") !== -1) {
+          const file = items[i].getAsFile();
+          if (file) {
+            uploadFile(file);
+            e.preventDefault();
+            break;
+          }
+        }
+      }
     }
+  };
+
+  const toggleSpeechLang = () => {
+    const nextLang = speechLang === "en-US" ? "ta-IN" : "en-US";
+    setSpeechLang(nextLang);
+    localStorage.setItem("muthuai_speech_lang", nextLang);
   };
 
   const toggleListening = () => {
@@ -193,7 +227,7 @@ export default function ChatComposer({
         const recognition = new SpeechRecognition();
         recognition.continuous = true;
         recognition.interimResults = true;
-        recognition.lang = "en-US";
+        recognition.lang = speechLang;
 
         recognition.onstart = () => {
           setIsListening(true);
@@ -234,12 +268,12 @@ export default function ChatComposer({
     }
   };
 
+  const isUploadingAny = uploadingFiles.some((f) => !f.error);
+  const backendRoot = API_BASE_URL.replace("/api", "");
+
   return (
     <div
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-      className={`
+      className="
         border-t
         border-slate-800
         bg-slate-950/80
@@ -248,77 +282,139 @@ export default function ChatComposer({
         py-5
         transition-colors
         duration-200
-        ${isDragging ? "bg-blue-600/5" : ""}
-      `}
+      "
     >
       <div className="mx-auto max-w-4xl">
         <input
           type="file"
           ref={fileInputRef}
           onChange={handleFileChange}
-          accept="image/*,.pdf,.docx,.doc,.txt,.md"
+          multiple
+          accept="image/*,.pdf,.docx,.doc,.txt,.md,.csv,.xlsx,.xls,.pptx,.ppt,.zip,.mp3,.wav,.mp4"
           className="hidden"
         />
 
-        {/* Attachment preview pill card */}
-        {attachment && (
-          <div className="relative inline-flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900 p-2.5 pr-12 mb-3 shadow-lg group">
-            <div className="relative h-12 w-12 flex items-center justify-center rounded-lg border border-slate-700 bg-slate-950 text-blue-500">
-              {attachment.mimeType.startsWith("image/") ? (
-                <img
-                  src={attachment.url}
-                  alt="Upload preview"
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <FileText size={24} />
-              )}
-            </div>
-            <div>
-              <p className="text-xs font-semibold text-white truncate max-w-[180px]">
-                {attachment.name}
-              </p>
-              <p className="text-[10px] text-slate-500 mt-0.5">
-                {(attachment.size / 1024).toFixed(1)} KB
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setAttachment(null)}
-              className="absolute right-2 top-2 rounded-full p-1 bg-slate-800 text-slate-400 hover:bg-slate-750 hover:text-white transition-all shadow-sm"
-              title="Remove attachment"
-            >
-              <X size={12} />
-            </button>
-          </div>
-        )}
+        {/* Media Preview Container */}
+        {(attachments.length > 0 || uploadingFiles.length > 0) && (
+          <div className="flex flex-wrap gap-3 mb-4 max-h-48 overflow-y-auto p-1">
+            {/* Completed Uploads */}
+            {attachments.map((att, idx) => {
+              const isImg = att.mimeType.startsWith("image/");
+              const resolvedUrl = att.url.startsWith("http") || att.url.startsWith("data:")
+                ? att.url
+                : `${backendRoot}${att.url}`;
 
-        {isUploading && (
-          <div className="flex items-center gap-2 text-xs text-blue-400 mb-3 animate-pulse">
-            <Loader2 size={14} className="animate-spin" />
-            <span>Reading file...</span>
+              return (
+                <div
+                  key={`att-${idx}`}
+                  className="relative flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/60 p-2.5 pr-10 shadow-lg group hover:border-slate-700 transition"
+                >
+                  <div className="relative h-11 w-11 flex items-center justify-center rounded-xl border border-slate-750 bg-slate-950 text-blue-500 overflow-hidden">
+                    {isImg ? (
+                      <img
+                        src={resolvedUrl}
+                        alt="Preview"
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <FileText size={20} />
+                    )}
+                  </div>
+                  <div className="min-w-0 max-w-[150px]">
+                    <p className="text-xs font-semibold text-white truncate">
+                      {att.name}
+                    </p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">
+                      {(att.size / 1024).toFixed(1)} KB
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeAttachment(idx)}
+                    className="absolute right-2 top-2 rounded-full p-1 bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white transition shadow-sm"
+                    title="Remove File"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              );
+            })}
+
+            {/* Active Uploads & Errors */}
+            {uploadingFiles.map((uf) => (
+              <div
+                key={`uf-${uf.id}`}
+                className={`relative flex items-center gap-3 rounded-2xl border p-2.5 pr-10 shadow-lg min-w-[200px] transition ${
+                  uf.error
+                    ? "border-red-900/50 bg-red-950/10"
+                    : "border-slate-800 bg-slate-900/30"
+                }`}
+              >
+                <div className="relative h-11 w-11 flex items-center justify-center rounded-xl border border-slate-750 bg-slate-950 text-slate-500">
+                  {uf.error ? (
+                    <AlertCircle size={20} className="text-red-500" />
+                  ) : (
+                    <Loader2 size={20} className="animate-spin text-blue-500" />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-white truncate pr-4">
+                    {uf.name}
+                  </p>
+                  {uf.error ? (
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className="text-[10px] text-red-400 font-medium">
+                        Failed
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => retryUpload(uf.id)}
+                        className="text-[10px] text-blue-400 font-bold hover:underline flex items-center gap-0.5"
+                      >
+                        <RotateCcw size={8} /> Retry
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="mt-1 w-full bg-slate-800 rounded-full h-1">
+                      <div
+                        className="bg-blue-600 h-1 rounded-full transition-all duration-300"
+                        style={{ width: `${uf.progress}%` }}
+                      ></div>
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => cancelUpload(uf.id)}
+                  className="absolute right-2 top-2 rounded-full p-1 bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white transition shadow-sm"
+                  title="Cancel upload"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
           </div>
         )}
 
         <div
-          className={`
+          className="
             flex
             items-end
             gap-3
             rounded-3xl
             border
+            border-slate-800
             p-3
             shadow-xl
             bg-slate-900
             transition-all
             duration-250
-            ${isDragging ? "border-blue-500 scale-[1.01]" : "border-slate-800"}
-          `}
+          "
         >
           <button
             type="button"
             onClick={handlePaperclipClick}
-            disabled={disabled || isLoading || isUploading}
+            disabled={disabled || isLoading || isUploadingAny}
             className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white disabled:opacity-50"
             title="Attach File"
           >
@@ -332,12 +428,11 @@ export default function ChatComposer({
             disabled={disabled || isLoading}
             onChange={(e) => setMessage(e.target.value)}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             placeholder={
               isListening
-                ? "Listening... Speak now."
-                : isDragging
-                ? "Drop file here..."
-                : "Message MuthuAI..."
+                ? `Listening in ${speechLang === "ta-IN" ? "Tamil" : "English"}...`
+                : "Message MuthuAI (Paste or Drag files directly)..."
             }
             className="
               min-h-[28px]
@@ -352,10 +447,37 @@ export default function ChatComposer({
             "
           />
 
+          {/* Multilingual Voice Language Toggle */}
+          <button
+            type="button"
+            onClick={toggleSpeechLang}
+            disabled={disabled || isLoading || isListening}
+            className="
+              rounded-xl
+              px-2.5
+              py-1.5
+              text-xs
+              font-extrabold
+              border
+              border-slate-800
+              bg-slate-950/70
+              text-slate-400
+              hover:text-white
+              transition
+              disabled:opacity-50
+              mb-1
+            "
+            title={`Active Language: ${
+              speechLang === "ta-IN" ? "Tamil" : "English"
+            }. Click to toggle.`}
+          >
+            {speechLang === "ta-IN" ? "தமிழ்" : "EN"}
+          </button>
+
           <button
             type="button"
             onClick={toggleListening}
-            disabled={disabled || isLoading || isUploading}
+            disabled={disabled || isLoading || isUploadingAny}
             className={`rounded-xl p-2 transition disabled:opacity-50 ${
               isListening
                 ? "bg-red-600 text-white animate-pulse"
@@ -372,8 +494,8 @@ export default function ChatComposer({
             disabled={
               disabled ||
               isLoading ||
-              isUploading ||
-              (message.trim() === "" && !attachment)
+              isUploadingAny ||
+              (message.trim() === "" && attachments.length === 0)
             }
             className="
               flex

@@ -11,7 +11,7 @@ interface MessageState {
   sendMessage: (
     chatId: string,
     content: string,
-    attachment?: Attachment
+    attachments?: Attachment[]
   ) => Promise<void>;
   clearMessages: () => void;
 }
@@ -36,7 +36,7 @@ export const useMessageStore = create<MessageState>((set) => ({
     }
   },
 
-  async sendMessage(chatId, content, attachment) {
+  async sendMessage(chatId, content, attachments) {
     set({ isLoading: true });
 
     try {
@@ -44,7 +44,7 @@ export const useMessageStore = create<MessageState>((set) => ({
       const userMessage = await messageService.sendMessage(
         chatId,
         content,
-        attachment
+        attachments
       );
 
       // Append user message to store state immediately
@@ -67,7 +67,7 @@ export const useMessageStore = create<MessageState>((set) => ({
         messages: [...state.messages, placeholderAssistantMsg],
       }));
 
-      // Stream AI response token-by-token
+      // Stream AI response token-by-token (pass attachments so backend can detect edit/vision intent)
       await aiService.streamResponse(
         chatId,
         content,
@@ -86,10 +86,49 @@ export const useMessageStore = create<MessageState>((set) => ({
           try {
             const messages = await messageService.getMessages(chatId);
             set({ messages, isLoading: false });
+
+            // Automatically speak response if Auto Speak preference is active
+            const autoSpeak = localStorage.getItem("muthuai_auto_speak") === "true";
+            if (autoSpeak && messages.length > 0) {
+              const lastMsg = messages[messages.length - 1];
+              const role = lastMsg.role || (lastMsg as any).sender || "user";
+              if (role === "assistant") {
+                window.speechSynthesis.cancel();
+                const utterance = new SpeechSynthesisUtterance(lastMsg.content);
+                const isTamil = /[\u0B80-\u0BFF]/.test(lastMsg.content);
+                const targetLang = isTamil ? "ta-IN" : "en-US";
+                utterance.lang = targetLang;
+
+                const voices = window.speechSynthesis.getVoices();
+                const matchingVoices = voices.filter(
+                  (v) =>
+                    v.lang.startsWith(targetLang) ||
+                    v.lang.startsWith(isTamil ? "ta" : "en")
+                );
+
+                const bestVoice =
+                  matchingVoices.find((v) =>
+                    v.name.toLowerCase().includes("google")
+                  ) ||
+                  matchingVoices.find((v) =>
+                    v.name.toLowerCase().includes("microsoft")
+                  ) ||
+                  matchingVoices.find((v) =>
+                    v.name.toLowerCase().includes("natural")
+                  ) ||
+                  matchingVoices[0];
+
+                if (bestVoice) {
+                  utterance.voice = bestVoice;
+                }
+                window.speechSynthesis.speak(utterance);
+              }
+            }
           } catch (err) {
             set({ isLoading: false });
           }
-        }
+        },
+        attachments  // ← forward attachments to backend stream
       );
     } catch (error) {
       set({ isLoading: false });

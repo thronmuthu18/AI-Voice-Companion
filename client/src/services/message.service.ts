@@ -15,7 +15,7 @@ export class MessageService {
   async sendMessage(
     chatId: string,
     content: string,
-    attachment?: Attachment
+    attachments?: Attachment[]
   ): Promise<Message> {
     const response = await api.post(
       "/message",
@@ -23,7 +23,7 @@ export class MessageService {
         chatId,
         role: "user",
         content,
-        attachment,
+        attachments,
       }
     );
 

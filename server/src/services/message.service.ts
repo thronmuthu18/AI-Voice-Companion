@@ -1,7 +1,9 @@
 import Chat from "../models/Chat.model";
 import Message from "../models/Message.model";
 import mongoose from "mongoose";
-import { extractTextFromBase64 } from "../utils/documentParser";
+import { extractTextFromFile } from "../utils/documentParser";
+import path from "path";
+import fs from "fs";
 
 export class MessageService {
   async createMessage(
@@ -10,19 +12,15 @@ export class MessageService {
     content: string,
     attachments?: any[]
   ) {
-    // Validate ObjectId
     if (!mongoose.Types.ObjectId.isValid(chatId)) {
       throw new Error("Invalid chat id");
     }
 
-    // Check Chat Exists
     const chat = await Chat.findById(chatId);
-
     if (!chat) {
       throw new Error("Chat not found");
     }
 
-    // Process document text extraction if attachments are present
     let processedAttachments = attachments;
     if (attachments && attachments.length > 0) {
       processedAttachments = await Promise.all(
@@ -32,19 +30,24 @@ export class MessageService {
             att.mimeType === "application/pdf" ||
             att.mimeType ===
               "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-            att.mimeType === "application/msword";
+            att.mimeType === "application/msword" ||
+            att.mimeType === "text/csv";
 
           if (isDoc && !att.extractedText) {
             try {
-              const text = await extractTextFromBase64(
+              // Resolve local file path from attachment URL
+              const filename = att.url.split("/").pop() || "";
+              const filePath = path.join(process.cwd(), "uploads", filename);
+
+              const text = await extractTextFromFile(
                 att.mimeType,
-                att.url
+                filePath
               );
 
               return { ...att, extractedText: text };
             } catch (err: any) {
               console.error(
-                "Text extraction failed for file:",
+                "Text extraction failed for local file:",
                 att.name,
                 err
               );
@@ -61,7 +64,7 @@ export class MessageService {
       );
     }
 
-    // Save Message with processed attachments
+    // Save Message
     const message = await Message.create({
       chatId,
       sender: role,
@@ -109,22 +112,42 @@ export class MessageService {
             promptContent += `\n\n[Uploaded Document: ${attachment.name}]\n${attachment.extractedText}\n[End of Document: ${attachment.name}]`;
           }
 
-          // If image, add it to OpenAI content blocks
+          // If image, read from disk on the fly and encode as base64 for OpenAI Vision API
           if (attachment.mimeType.startsWith("image/")) {
             hasImage = true;
 
-            contentBlocks.push({
-              type: "image_url",
-              image_url: {
-                url: attachment.url,
-              },
-            });
+            try {
+              const filename = attachment.url.split("/").pop() || "";
+              const filePath = path.join(process.cwd(), "uploads", filename);
+
+              if (fs.existsSync(filePath)) {
+                const buffer = fs.readFileSync(filePath);
+                const base64Img = `data:${attachment.mimeType};base64,${buffer.toString("base64")}`;
+
+                contentBlocks.push({
+                  type: "image_url",
+                  image_url: {
+                    url: base64Img,
+                  },
+                });
+              } else if (attachment.url.startsWith("data:image/")) {
+                // If it is legacy base64 data url, use it directly
+                contentBlocks.push({
+                  type: "image_url",
+                  image_url: {
+                    url: attachment.url,
+                  },
+                });
+              }
+            } catch (err) {
+              console.error("Failed to read image attachment from disk:", err);
+            }
           }
         }
       }
 
-      // If images exist, map to array content format
-      if (hasImage) {
+      // If images exist, map to array content format (OpenAI Vision only supports image URLs on 'user' role messages)
+      if (hasImage && role === "user") {
         contentBlocks.unshift({
           type: "text",
           text: promptContent,
