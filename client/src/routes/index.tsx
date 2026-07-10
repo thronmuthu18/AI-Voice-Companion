@@ -7,6 +7,7 @@ import Pinned from "../pages/Pinned";
 import Archived from "../pages/Archived";
 import Settings from "../pages/Settings";
 import Profile from "../pages/Profile";
+import Pricing from "../pages/Pricing";
 
 import ProtectedRoute from "./ProtectedRoute";
 import PublicRoute from "./PublicRoute";
@@ -75,6 +76,11 @@ export default function AppRoutes() {
             <Profile />
           </ProtectedRoute>
         }
+      />
+
+      <Route
+        path="/pricing"
+        element={<Pricing />}
       />
 
       <Route

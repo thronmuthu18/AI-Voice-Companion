@@ -11,4 +11,10 @@ router.get(
   userController.getProfile
 );
 
+router.get(
+  "/usage",
+  authenticate,
+  userController.getUsageSummary
+);
+
 export default router;

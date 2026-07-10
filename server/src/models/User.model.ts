@@ -4,23 +4,19 @@ export interface IUser extends Document {
   name: string;
   email: string;
   password?: string;
-
   avatar?: string;
-
   provider: "local" | "google" | "github";
-
   role: "user" | "admin";
-
   subscription: "free" | "pro";
-
   emailVerified: boolean;
-
   isActive: boolean;
-
   lastLogin?: Date;
-
+  // Brute-force protection
+  failedLoginAttempts: number;
+  lockUntil?: Date;
+  // Multi-device refresh token store
+  refreshTokens: string[];
   createdAt: Date;
-
   updatedAt: Date;
 }
 
@@ -30,6 +26,7 @@ const UserSchema = new Schema<IUser>(
       type: String,
       required: true,
       trim: true,
+      maxlength: 100,
     },
 
     email: {
@@ -79,6 +76,23 @@ const UserSchema = new Schema<IUser>(
 
     lastLogin: {
       type: Date,
+    },
+
+    // Brute-force protection
+    failedLoginAttempts: {
+      type: Number,
+      default: 0,
+    },
+
+    lockUntil: {
+      type: Date,
+      default: null,
+    },
+
+    // Stores hashed refresh tokens per device
+    refreshTokens: {
+      type: [String],
+      default: [],
     },
   },
   {

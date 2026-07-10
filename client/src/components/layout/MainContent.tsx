@@ -16,7 +16,7 @@ export default function MainContent({
       className="
         flex-1
         overflow-hidden
-        bg-slate-950
+        bg-transparent
         text-white
       "
     >

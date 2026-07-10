@@ -6,6 +6,9 @@ export const API_BASE_URL =
 export const TOKEN_KEY =
   "muthuai_access_token";
 
+export const REFRESH_TOKEN_KEY =
+  "muthuai_refresh_token";
+
 export const USER_KEY =
   "muthuai_user";
 

@@ -1,5 +1,5 @@
 import Chat from "../models/Chat.model";
-import { openai } from "../config/openai";
+import { ProviderRouter } from "../providers/provider.router";
 
 export class ChatService {
   async createChat(
@@ -40,26 +40,19 @@ export class ChatService {
       return chat;
     }
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content:
-            "Generate a very short chat title (maximum 5 words). Return only the title without quotes or punctuation.",
-        },
-        {
-          role: "user",
-          content: firstMessage,
-        },
-      ],
-      max_tokens: 20,
-      temperature: 0.3,
-    });
+    const provider = ProviderRouter.getProviderForAction("chat");
+    const response = await provider.chat([
+      {
+        role: "system",
+        content: "Generate a very short chat title (maximum 5 words). Return only the title without quotes or punctuation.",
+      },
+      {
+        role: "user",
+        content: firstMessage,
+      },
+    ]);
 
-    chat.title =
-      completion.choices[0]?.message?.content?.trim() ||
-      "New Chat";
+    chat.title = response.trim() || "New Chat";
 
     await chat.save();
 

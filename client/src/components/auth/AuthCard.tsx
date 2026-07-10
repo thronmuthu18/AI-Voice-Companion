@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import GlassPanel from "../ui/GlassPanel";
 
 interface AuthCardProps {
   title: string;
@@ -12,25 +13,15 @@ export default function AuthCard({
   children,
 }: AuthCardProps) {
   return (
-    <div
-      className="
-        rounded-3xl
-        border
-        border-slate-800
-        bg-slate-900/70
-        backdrop-blur-2xl
-        shadow-2xl
-        p-8
-      "
-    >
+    <GlassPanel className="p-8">
       <div className="mb-8 text-center">
         <div
           className="
             mx-auto
             mb-4
             flex
-            h-16
-            w-16
+            h-14
+            w-14
             items-center
             justify-center
             rounded-2xl
@@ -38,21 +29,22 @@ export default function AuthCard({
             text-2xl
             font-bold
             text-white
+            shadow-lg
           "
         >
           M
         </div>
 
-        <h1 className="text-3xl font-bold text-white">
+        <h1 className="text-3xl font-extrabold text-slate-850 dark:text-white tracking-tight">
           {title}
         </h1>
 
-        <p className="mt-2 text-slate-400">
+        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
           {subtitle}
         </p>
       </div>
 
       {children}
-    </div>
+    </GlassPanel>
   );
 }

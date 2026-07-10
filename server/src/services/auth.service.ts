@@ -1,6 +1,6 @@
 import bcrypt from "bcrypt";
 import User from "../models/User.model";
-import { generateAccessToken } from "../utils/jwt";
+import { generateAccessToken, generateRefreshToken } from "../utils/jwt";
 
 export class AuthService {
   async register(
@@ -44,17 +44,21 @@ export class AuthService {
       throw new Error("Invalid email or password");
     }
 
-    const accessToken = generateAccessToken({
+    const payload = {
       userId: String(user._id),
       email: user.email,
       role: user.role,
-    });
+    };
+
+    const accessToken = generateAccessToken(payload);
+    const refreshToken = generateRefreshToken(payload);
 
     return {
       user,
       accessToken,
+      refreshToken,
     };
   }
 }
 
-export const authService = new AuthService();
+export const authService = new AuthService();

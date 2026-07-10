@@ -274,14 +274,12 @@ export default function ChatComposer({
   return (
     <div
       className="
-        border-t
-        border-slate-800
-        bg-slate-950/80
-        backdrop-blur-xl
+        bg-transparent
         px-6
-        py-5
-        transition-colors
-        duration-200
+        pb-6
+        pt-2
+        transition-all
+        duration-300
       "
     >
       <div className="mx-auto max-w-4xl">
@@ -403,19 +401,25 @@ export default function ChatComposer({
             gap-3
             rounded-3xl
             border
-            border-slate-800
+            border-slate-200/50
+            dark:border-slate-800/40
             p-3
             shadow-xl
-            bg-slate-900
+            bg-white/25
+            dark:bg-slate-950/25
+            backdrop-blur-md
             transition-all
             duration-250
+            focus-within:border-blue-500/60
+            focus-within:ring-2
+            focus-within:ring-blue-500/20
           "
         >
           <button
             type="button"
             onClick={handlePaperclipClick}
             disabled={disabled || isLoading || isUploadingAny}
-            className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white disabled:opacity-50"
+            className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-200/50 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-white disabled:opacity-50"
             title="Attach File"
           >
             <Paperclip size={20} />
@@ -441,8 +445,10 @@ export default function ChatComposer({
               resize-none
               overflow-y-auto
               bg-transparent
-              text-white
-              placeholder:text-slate-500
+              text-slate-800
+              dark:text-white
+              placeholder:text-slate-400
+              dark:placeholder:text-slate-500
               outline-none
             "
           />
@@ -478,10 +484,10 @@ export default function ChatComposer({
             type="button"
             onClick={toggleListening}
             disabled={disabled || isLoading || isUploadingAny}
-            className={`rounded-xl p-2 transition disabled:opacity-50 ${
+            className={`rounded-xl p-2 transition duration-200 disabled:opacity-50 hover:scale-105 active:scale-95 ${
               isListening
-                ? "bg-red-600 text-white animate-pulse"
-                : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                ? "bg-red-650 text-white animate-pulse"
+                : "text-slate-450 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-white"
             }`}
             title={isListening ? "Stop Listening" : "Start Voice Input"}
           >
@@ -507,9 +513,13 @@ export default function ChatComposer({
               bg-blue-600
               text-white
               transition
+              duration-200
               hover:bg-blue-500
+              hover:scale-105
+              active:scale-95
               disabled:cursor-not-allowed
               disabled:opacity-50
+              disabled:scale-100
             "
           >
             {isLoading ? (

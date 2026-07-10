@@ -22,6 +22,7 @@ const ChatSchema = new Schema<IChat>(
       type: Schema.Types.ObjectId,
       ref: "User",
       required: true,
+      index: true,
     },
 
     title: {

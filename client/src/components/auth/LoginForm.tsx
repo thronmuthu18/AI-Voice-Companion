@@ -3,7 +3,7 @@ import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { Input } from "../ui/Input";
 import  Button  from "../ui/Button";
 import { useAuthStore } from "../../stores/auth.store";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 
 export default function LoginForm() {
   const navigate = useNavigate();
@@ -101,6 +101,13 @@ export default function LoginForm() {
           "Sign In"
         )}
       </Button>
+
+      <div className="text-center text-sm text-slate-500 dark:text-slate-400 mt-4">
+        Don't have an account?{" "}
+        <Link to="/register" className="text-blue-500 hover:underline">
+          Sign Up
+        </Link>
+      </div>
     </form>
   );
 }

@@ -46,6 +46,21 @@ export class AIService {
       }
     );
 
+    if (!response.ok) {
+      const errBody = await response.json().catch(() => ({}));
+      const err: any = new Error(errBody.message || `Request failed with status ${response.status}`);
+      err.code = errBody.code;
+      err.feature = errBody.feature;
+      err.plan = errBody.plan;
+      err.used = errBody.used;
+      err.limit = errBody.limit;
+      err.remaining = errBody.remaining;
+      err.resetAt = errBody.resetAt;
+      err.upgradeAvailable = errBody.upgradeAvailable;
+      err.availablePlans = errBody.availablePlans;
+      throw err;
+    }
+
     if (!response.body) {
       throw new Error("Streaming not supported");
     }

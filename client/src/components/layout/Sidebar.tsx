@@ -8,6 +8,7 @@ import {
   Settings,
   User,
   Trash2,
+  CreditCard,
 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useEffect } from "react";
@@ -35,7 +36,6 @@ export default function Sidebar() {
   const isPinnedRoute = location.pathname === "/pinned";
   const isArchivedRoute = location.pathname === "/archived";
 
-  // Fetch chats on mount, and whenever switching between active and archived views
   useEffect(() => {
     fetchChats(isArchivedRoute).catch((err) =>
       console.error("Error loading sidebar chats:", err)
@@ -61,7 +61,6 @@ export default function Sidebar() {
     }
   };
 
-  // Filter chats by search query and pin status
   const displayChats = (isPinnedRoute ? chats.filter((c) => c.isPinned) : chats).filter(
     (c) => c.title.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -70,54 +69,43 @@ export default function Sidebar() {
 
   return (
     <motion.aside
-      initial={{ x: -30, opacity: 0 }}
+      initial={{ x: -20, opacity: 0 }}
       animate={{ x: 0, opacity: 1 }}
       transition={{ duration: 0.35 }}
       className="
         w-80
         h-screen
-        border-r
-        border-slate-800
-        bg-slate-950/80
-        backdrop-blur-xl
+        p-4
         flex
         flex-col
+        space-y-4
+        bg-transparent
+        overflow-hidden
       "
     >
-      {/* Logo */}
-      <div className="p-6 border-b border-slate-800">
-        <div className="flex items-center gap-3">
-          <div
-            className="
-              h-11
-              w-11
-              rounded-xl
-              bg-blue-600
-              flex
-              items-center
-              justify-center
-            "
-          >
-            <Bot size={22} color="white" />
-          </div>
-
-          <div>
-            <h1 className="text-lg font-bold text-white">MuthuAI</h1>
-            <p className="text-xs text-slate-400">AI Operating System</p>
-          </div>
+      {/* 1. Logo Block (Independent Floating Glass Card) */}
+      <div className="p-4 rounded-2xl border border-slate-200/40 dark:border-slate-800/50 bg-white/20 dark:bg-slate-950/30 backdrop-blur-md shadow-md flex items-center gap-3">
+        <div className="h-10 w-10 rounded-xl bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
+          <Bot size={20} color="white" />
+        </div>
+        <div>
+          <h1 className="text-md font-bold text-slate-800 dark:text-white leading-tight">MuthuAI</h1>
+          <p className="text-[10px] text-slate-500 dark:text-slate-400">AI Operating System</p>
         </div>
       </div>
 
-      {/* New Chat Button */}
-      <div className="p-4">
+      {/* 2. New Chat Button (Standalone floating CTA control with scale transition) */}
+      <div>
         <button
           onClick={handleNewChat}
           className="
             w-full
-            rounded-xl
-            bg-blue-600
-            hover:bg-blue-500
-            transition
+            rounded-2xl
+            bg-blue-600/90
+            hover:bg-blue-600
+            active:scale-95
+            transition-all
+            duration-200
             text-white
             py-3
             flex
@@ -125,6 +113,11 @@ export default function Sidebar() {
             justify-center
             gap-2
             font-medium
+            shadow-lg
+            shadow-blue-500/20
+            backdrop-blur-md
+            border
+            border-blue-400/30
           "
         >
           <Plus size={18} />
@@ -132,22 +125,23 @@ export default function Sidebar() {
         </button>
       </div>
 
-      {/* Navigation */}
-      <nav className="px-3 space-y-1">
+      {/* 3. Navigation Folders (Floating Glass bento panel) */}
+      <nav className="p-2 rounded-2xl border border-slate-200/40 dark:border-slate-800/50 bg-white/20 dark:bg-slate-950/30 backdrop-blur-md shadow-sm space-y-1">
         <SidebarItem to="/chat" icon={MessageSquare} label="Chats" />
         <SidebarItem to="/pinned" icon={Pin} label="Pinned" badge={pinnedCount} />
         <SidebarItem to="/archived" icon={Archive} label="Archived" />
+        <SidebarItem to="/pricing" icon={CreditCard} label="Subscription" />
       </nav>
 
-      {/* Recent Chats Section */}
-      <div className="mt-6 px-5 flex-1 overflow-y-auto min-h-0">
-        <p className="text-xs uppercase text-slate-500 mb-3 font-semibold tracking-wider">
+      {/* 4. Recent Chats Area (Independent Floating scroll view where every chat is an object) */}
+      <div className="flex-1 overflow-y-auto pr-1 space-y-3 min-h-0">
+        <p className="text-[10px] uppercase text-slate-500 dark:text-slate-400 pl-2 font-bold tracking-widest">
           {isPinnedRoute ? "Pinned Chats" : isArchivedRoute ? "Archived Chats" : "Recent Conversations"}
         </p>
 
-        <div className="space-y-1 pb-4">
+        <div className="space-y-2 pb-2">
           {displayChats.length === 0 ? (
-            <div className="text-sm text-slate-600 py-2 pl-1">
+            <div className="text-xs text-slate-500 dark:text-slate-450 p-4 text-center rounded-2xl border border-slate-250/20 dark:border-slate-800/20 bg-white/5 dark:bg-slate-950/5">
               {searchQuery ? "No matching chats found" : "No chats in this folder"}
             </div>
           ) : (
@@ -156,27 +150,42 @@ export default function Sidebar() {
               return (
                 <div
                   key={chat._id}
-                  className="group relative flex items-center w-full rounded-lg hover:bg-slate-800 transition"
+                  className={`
+                    group 
+                    relative 
+                    flex 
+                    items-center 
+                    w-full 
+                    rounded-2xl 
+                    border 
+                    transition-all 
+                    duration-200 
+                    shadow-sm
+                    ${
+                      isActive
+                        ? "border-blue-500/80 bg-blue-600/10 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400"
+                        : "border-slate-200/40 dark:border-slate-800/40 bg-white/20 dark:bg-slate-950/20 text-slate-700 dark:text-slate-400 hover:border-slate-350 dark:hover:border-slate-700 hover:bg-white/40 dark:hover:bg-slate-900/30"
+                    }
+                  `}
                 >
                   <button
                     onClick={() => handleSelectChat(chat)}
-                    className={`
+                    className="
                       flex-1
                       text-left
-                      px-3
-                      py-2.5
+                      px-4
+                      py-3
                       pr-20
                       text-sm
                       truncate
-                      transition
-                      rounded-lg
-                      ${isActive ? "text-white font-medium bg-slate-800" : "text-slate-400 hover:text-white"}
-                    `}
+                      transition-colors
+                      font-medium
+                    "
                   >
                     {chat.title}
                   </button>
 
-                  {/* Actions (visible on hover) */}
+                  {/* Actions (visible on hover over the chat item) */}
                   <div
                     className="
                       absolute
@@ -188,13 +197,16 @@ export default function Sidebar() {
                       gap-0.5
                       transition-opacity
                       duration-150
-                      bg-slate-800/90
+                      bg-white/90
+                      dark:bg-slate-900/90
                       backdrop-blur-sm
                       px-1
                       py-0.5
-                      rounded-md
+                      rounded-lg
                       border
-                      border-slate-700
+                      border-slate-200
+                      dark:border-slate-800
+                      shadow-md
                     "
                   >
                     {/* Pin button */}
@@ -204,12 +216,12 @@ export default function Sidebar() {
                           e.stopPropagation();
                           pinChat(chat._id);
                         }}
-                        className={`p-1 rounded hover:bg-slate-700 transition ${
-                          chat.isPinned ? "text-blue-500" : "text-slate-400 hover:text-white"
+                        className={`p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition ${
+                          chat.isPinned ? "text-blue-500" : "text-slate-400 hover:text-slate-650 dark:hover:text-white"
                         }`}
                         title={chat.isPinned ? "Unpin Chat" : "Pin Chat"}
                       >
-                        <Pin size={14} className={chat.isPinned ? "fill-blue-500" : ""} />
+                        <Pin size={12} className={chat.isPinned ? "fill-blue-500" : ""} />
                       </button>
                     )}
 
@@ -219,10 +231,10 @@ export default function Sidebar() {
                         e.stopPropagation();
                         archiveChat(chat._id);
                       }}
-                      className="p-1 rounded hover:bg-slate-700 text-slate-400 hover:text-white transition"
+                      className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-650 dark:hover:text-white transition"
                       title={chat.isArchived ? "Unarchive" : "Archive"}
                     >
-                      <Archive size={14} />
+                      <Archive size={12} />
                     </button>
 
                     {/* Delete button */}
@@ -233,10 +245,10 @@ export default function Sidebar() {
                           deleteChat(chat._id);
                         }
                       }}
-                      className="p-1 rounded hover:bg-slate-700 text-slate-400 hover:text-red-500 transition"
+                      className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-red-500 transition"
                       title="Delete Permanently"
                     >
-                      <Trash2 size={14} />
+                      <Trash2 size={12} />
                     </button>
                   </div>
                 </div>
@@ -246,10 +258,12 @@ export default function Sidebar() {
         </div>
       </div>
 
-      {/* Sidebar Footer */}
-      <div className="border-t border-slate-800 p-3 space-y-1 bg-slate-950">
-        <SidebarItem to="/settings" icon={Settings} label="Settings" />
-        <SidebarItem to="/profile" icon={User} label="Profile" />
+      {/* 5. Sidebar Footer Controls (Floating Bento panel at the bottom) */}
+      <div className="mt-auto pt-2">
+        <div className="rounded-2xl border border-slate-200/40 dark:border-slate-800/50 bg-white/20 dark:bg-slate-950/30 backdrop-blur-md p-1.5 shadow-sm space-y-1">
+          <SidebarItem to="/settings" icon={Settings} label="Settings" />
+          <SidebarItem to="/profile" icon={User} label="Profile" />
+        </div>
       </div>
     </motion.aside>
   );

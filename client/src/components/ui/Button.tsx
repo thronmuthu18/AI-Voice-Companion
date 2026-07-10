@@ -19,15 +19,19 @@ export default function Button({
       disabled={loading || disabled}
       className={`
         w-full
-        rounded-lg
-        bg-black
+        rounded-xl
+        bg-blue-600
         text-white
         px-4
         py-3
         font-medium
-        transition
-        hover:opacity-90
+        transition-all
+        duration-200
+        hover:bg-blue-500
+        hover:scale-[1.01]
+        active:scale-[0.99]
         disabled:opacity-50
+        disabled:scale-100
         disabled:cursor-not-allowed
         ${className}
       `}

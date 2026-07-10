@@ -1,5 +1,6 @@
 import { openai } from "../config/openai";
 import { messageService } from "./message.service";
+import { ProviderRouter } from "../providers/provider.router";
 import OpenAI from "openai";
 import path from "path";
 import fs from "fs";
@@ -41,7 +42,10 @@ function resolveImageBuffer(imageDataOrPath: string): Buffer {
 
 export class AIService {
   async generateResponse(chatId: string): Promise<string> {
-    const messages = [
+    const history = await messageService.getConversationHistory(chatId);
+    const provider = ProviderRouter.getProviderForAction("chat");
+
+    const chatHistory = [
       {
         role: "system" as const,
         content:
@@ -52,49 +56,41 @@ export class AIService {
           "If a document is uploaded, summarize its contents. " +
           "You CAN fully analyze, describe, and discuss any uploaded image or document.",
       },
-      ...(await messageService.getConversationHistory(chatId)),
+      ...history.map(h => ({
+        role: h.role as "user" | "assistant" | "system",
+        content: h.content
+      }))
     ];
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages,
-      temperature: 0.7,
-      max_tokens: 2000,
-    });
-
-    return (
-      response.choices[0]?.message?.content?.trim() ??
-      "Sorry, I couldn't generate a response."
-    );
+    const response = await provider.chat(chatHistory);
+    return response || "Sorry, I couldn't generate a response.";
   }
 
   async optimizeGenerationPrompt(userPrompt: string): Promise<string> {
     try {
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are an expert AI Image Prompt Optimizer. Your task is to transform a raw user prompt " +
-              "(which may be long, conversational, poorly structured, or in another language like Tamil) " +
-              "into a highly descriptive, cohesive, and optimized English prompt for an image generation model like DALL-E.\n\n" +
-              "Guidelines:\n" +
-              "1. Core Intent: Preserve the user's primary subject, setting, and composition.\n" +
-              "2. Translation: Translate non-English (e.g. Tamil or Hinglish/Tanglish) content into descriptive English.\n" +
-              "3. Clarity & Quality: Remove conversational fillers, redundant phrases, and logical contradictions. Add concise styling descriptors (e.g., lighting, texture, artistic medium) if implied.\n" +
-              "4. Constraints: Strictly adhere to the original request without introducing entirely new subjects or hallucinating requirements.\n" +
-              "5. Format: Output ONLY the final optimized prompt text. Do not write explanations or preambles."
-          },
-          {
-            role: "user",
-            content: userPrompt
-          }
-        ],
-        temperature: 0.3,
-      });
+      const provider = ProviderRouter.getProviderForAction("chat");
+      const chatHistory = [
+        {
+          role: "system" as const,
+          content:
+            "You are an expert AI Image Prompt Optimizer. Your task is to transform a raw user prompt " +
+            "(which may be long, conversational, poorly structured, or in another language like Tamil) " +
+            "into a highly descriptive, cohesive, and optimized English prompt for an image generation model like DALL-E.\n\n" +
+            "Guidelines:\n" +
+            "1. Core Intent: Preserve the user's primary subject, setting, and composition.\n" +
+            "2. Translation: Translate non-English (e.g. Tamil or Hinglish/Tanglish) content into descriptive English.\n" +
+            "3. Clarity & Quality: Remove conversational fillers, redundant phrases, and logical contradictions. Add concise styling descriptors (e.g., lighting, texture, artistic medium) if implied.\n" +
+            "4. Constraints: Strictly adhere to the original request without introducing entirely new subjects or hallucinating requirements.\n" +
+            "5. Format: Output ONLY the final optimized prompt text. Do not write explanations or preambles."
+        },
+        {
+          role: "user" as const,
+          content: userPrompt
+        }
+      ];
 
-      return response.choices[0]?.message?.content?.trim() || userPrompt;
+      const response = await provider.chat(chatHistory);
+      return response.trim() || userPrompt;
     } catch (err) {
       console.warn("Prompt optimization failed, falling back to original prompt:", err);
       return userPrompt;
@@ -103,14 +99,15 @@ export class AIService {
 
   async optimizeEditPrompt(userPrompt: string, base64Url?: string): Promise<string> {
     try {
-      const messages: any[] = [
+      const provider = ProviderRouter.getProviderForAction("chat");
+      const chatHistory = [
         {
-          role: "system",
+          role: "system" as const,
           content:
             "You are an expert AI Image Edit Prompt Optimizer. You are given a user request and the original image as the absolute ground truth.\n\n" +
             "Your task is to analyze the original image and the request to write a highly precise, literal instruction set for an image editing model (gpt-image-2 / DALL-E Edit).\n\n" +
             "Strict Guidelines:\n" +
-            "1. IDENTITY LOCK: Analyze the original image. Identify the main subject's features (e.g. face, hair style/color, skin tone, clothing, pose, accessories). Explicitly instruct the model to lock these: 'Do not change the face, hairstyle, skin tone, pose, expression, clothing, or accessories of [describe main subject, e.g. the man in the blue shirt].'\n" +
+            "1. IDENTITY LOCK: Identify the main subject's features (e.g. face, hair style/color, skin tone, clothing, pose, accessories). Explicitly instruct the model to lock these: 'Do not change the face, hairstyle, skin tone, pose, expression, clothing, or accessories of [describe main subject, e.g. the man in the blue shirt].'\n" +
             "2. COMPOSITION LOCK: Enforce that background perspective, camera angle, lighting, resolution, image size, and untouched regions must remain exactly identical to the original.\n" +
             "3. PRECISION EDIT ONLY: Extract the EXACT modification requested. Describe exactly what is being modified, added, or removed, and specify that nothing else should be altered.\n" +
             "4. NO CREATIVE MODIFICATIONS: Do not add unsolicited improvements, lighting adjustments, color grading, stylized accessories, or clothing changes unless the user explicitly requested it.\n" +
@@ -126,39 +123,15 @@ export class AIService {
             "   - Details: Photorealistic match, high fidelity, seamless boundary merging.\n" +
             "   ]\n" +
             "Do not write conversational text, preamble, or explanations. Return ONLY the formatted block."
+        },
+        {
+          role: "user" as const,
+          content: base64Url ? `Optimize the prompt for this user request: "${userPrompt}". Original image base64 provided: ${base64Url.substring(0, 100)}...` : userPrompt
         }
       ];
 
-      if (base64Url) {
-        messages.push({
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: `Optimize the prompt for this user request: "${userPrompt}"`
-            },
-            {
-              type: "image_url",
-              image_url: {
-                url: base64Url
-              }
-            }
-          ]
-        });
-      } else {
-        messages.push({
-          role: "user",
-          content: userPrompt
-        });
-      }
-
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages,
-        temperature: 0.2,
-      });
-
-      return response.choices[0]?.message?.content?.trim() || userPrompt;
+      const response = await provider.chat(chatHistory);
+      return response.trim() || userPrompt;
     } catch (err) {
       console.warn("Edit prompt optimization failed, falling back to original prompt:", err);
       return userPrompt;

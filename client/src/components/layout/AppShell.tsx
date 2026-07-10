@@ -2,6 +2,7 @@ import Sidebar from "./Sidebar";
 import Header from "./Header";
 import MainContent from "./MainContent";
 import MobileSidebar from "./MobileSidebar";
+import BackgroundScene from "../ui/BackgroundScene";
 import type { ReactNode } from "react";
 
 interface AppShellProps {
@@ -16,9 +17,11 @@ export default function AppShell({
   noScroll = false,
 }: AppShellProps) {
   return (
-    <div className="flex h-screen bg-slate-950 text-white overflow-hidden">
+    <div className="relative flex h-screen bg-transparent text-slate-800 dark:text-white overflow-hidden">
+      <BackgroundScene />
+      
       {/* Desktop Sidebar */}
-      <div className="hidden lg:block">
+      <div className="hidden lg:block z-10">
         <Sidebar />
       </div>
 
@@ -26,7 +29,7 @@ export default function AppShell({
       <MobileSidebar />
 
       {/* Main Area */}
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex flex-1 flex-col overflow-hidden z-10">
         <Header />
 
         <MainContent noPadding={noPadding} noScroll={noScroll}>

@@ -37,6 +37,7 @@ export const useMessageStore = create<MessageState>((set) => ({
   },
 
   async sendMessage(chatId, content, attachments) {
+    const assistantMsgId = crypto.randomUUID();
     set({ isLoading: true });
 
     try {
@@ -53,7 +54,6 @@ export const useMessageStore = create<MessageState>((set) => ({
       }));
 
       // Setup temporary placeholder assistant message with client-side unique id
-      const assistantMsgId = crypto.randomUUID();
       const placeholderAssistantMsg: Message = {
         _id: assistantMsgId,
         chatId,
@@ -130,9 +130,34 @@ export const useMessageStore = create<MessageState>((set) => ({
         },
         attachments  // ← forward attachments to backend stream
       );
-    } catch (error) {
-      set({ isLoading: false });
-      throw error;
+    } catch (error: any) {
+      const { useSubscriptionStore } = require("./subscription.store");
+      
+      if (error.code === "APP_DAILY_QUOTA_EXCEEDED") {
+        set((state) => ({
+          isLoading: false,
+          messages: state.messages.filter((m) => m._id !== assistantMsgId),
+        }));
+        
+        useSubscriptionStore.getState().openQuotaModal({
+          feature: error.feature,
+          plan: error.plan,
+          used: error.used,
+          limit: error.limit,
+          resetAt: error.resetAt,
+          upgradeAvailable: error.upgradeAvailable,
+          availablePlans: error.availablePlans
+        });
+      } else {
+        set((state) => ({
+          isLoading: false,
+          messages: state.messages.map((m) =>
+            m._id === assistantMsgId
+              ? { ...m, content: `❌ Error: ${error.message || "Failed to generate response"}` }
+              : m
+          ),
+        }));
+      }
     }
   },
 

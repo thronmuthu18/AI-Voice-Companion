@@ -1,4 +1,3 @@
-import { openai } from "../config/openai";
 import { contextService } from "./context.service";
 
 export interface ClassificationResult {
@@ -79,22 +78,18 @@ export class IntelligenceService {
         "  }\n" +
         "}";
 
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemMessage },
-          {
-            role: "user",
-            content: `Message: "${resolvedQuery}"\nContext: hasImage=${hasImage}, hasDocument=${hasDocument}`
-          }
-        ],
-        temperature: 0.1,
-        response_format: { type: "json_object" }
-      });
+      const { ProviderRouter } = require("../providers/provider.router");
+      const provider = ProviderRouter.getProviderForAction("chat");
 
-      const parsed: ClassificationResult = JSON.parse(
-        response.choices[0]?.message?.content || "{}"
-      );
+      const response = await provider.chat([
+        { role: "system", content: systemMessage },
+        {
+          role: "user",
+          content: `Message: "${resolvedQuery}"\nContext: hasImage=${hasImage}, hasDocument=${hasDocument}`
+        }
+      ]);
+
+      const parsed: ClassificationResult = JSON.parse(response || "{}");
 
       return {
         intents: parsed.intents || ["general_chat"],
@@ -103,7 +98,7 @@ export class IntelligenceService {
         context: parsed.context || { hasImage, hasDocument, primaryIntent: "general_chat" }
       };
     } catch (err) {
-      console.warn("Intent classification failed, falling back to general_chat:", err);
+      console.error("[Intent Classification Error] Classification failed. Falling back to general_chat:", err);
       return {
         intents: ["general_chat"],
         confidence: 1.0,

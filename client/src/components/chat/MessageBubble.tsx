@@ -9,6 +9,7 @@ import {
   X,
 } from "lucide-react";
 import { useState, useEffect } from "react";
+import { motion } from "framer-motion";
 import type { Attachment } from "../../types/api.types";
 import { API_BASE_URL } from "../../lib/constants";
 
@@ -99,7 +100,10 @@ export default function MessageBubble({
   const backendRoot = API_BASE_URL.replace("/api", "");
 
   return (
-    <div
+    <motion.div
+      initial={{ opacity: 0, y: 12, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
       className={`flex w-full ${
         isUser ? "justify-end" : "justify-start"
       }`}
@@ -112,10 +116,11 @@ export default function MessageBubble({
           px-5
           py-4
           shadow-lg
+          backdrop-blur-md
           ${
             isUser
-              ? "bg-blue-600 text-white"
-              : "bg-slate-900 border border-slate-800 text-slate-100"
+              ? "bg-blue-600/90 text-white dark:bg-blue-600/90 border border-blue-500/30 shadow-md"
+              : "bg-white/25 dark:bg-slate-950/20 border border-slate-200/50 dark:border-slate-800/40 text-slate-800 dark:text-slate-100"
           }
         `}
       >
@@ -128,7 +133,7 @@ export default function MessageBubble({
                 rounded-lg
                 p-1
                 transition
-                ${isPlayingSpeech ? "text-blue-500 animate-pulse" : "text-slate-400 hover:text-white"}
+                ${isPlayingSpeech ? "text-blue-500 animate-pulse" : "text-slate-400 hover:text-slate-800 dark:hover:text-white"}
               `}
               title={isPlayingSpeech ? "Stop Speaking" : "Read Aloud"}
             >
@@ -142,7 +147,8 @@ export default function MessageBubble({
               rounded-lg
               p-1
               text-slate-400
-              hover:text-white
+              hover:text-slate-800
+              dark:hover:text-white
               transition
             "
             title="Copy Text"
@@ -308,6 +314,6 @@ export default function MessageBubble({
           </button>
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }

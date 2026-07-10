@@ -1,4 +1,6 @@
 import AppShell from "../components/layout/AppShell";
+import PageShell from "../components/ui/PageShell";
+import GlassPanel from "../components/ui/GlassPanel";
 import { useAuthStore } from "../stores/auth.store";
 import { LogOut, User, Mail, Calendar, ShieldCheck } from "lucide-react";
 import Button from "../components/ui/Button";
@@ -22,68 +24,75 @@ export default function Profile() {
 
   return (
     <AppShell>
-      <div className="max-w-2xl mx-auto mt-6">
-        <div className="rounded-3xl border border-slate-800 bg-slate-900/40 backdrop-blur-xl shadow-2xl p-8">
-          {/* Avatar and Header */}
-          <div className="flex flex-col items-center text-center pb-8 border-b border-slate-800">
-            <div className="h-24 w-24 rounded-full bg-blue-600 flex items-center justify-center text-white text-4xl font-bold shadow-lg mb-4">
-              {user?.name ? user.name.charAt(0).toUpperCase() : "U"}
-            </div>
+      <PageShell title="Profile" description="View and manage your account details and authentication status" noCard>
+        <div className="grid md:grid-cols-2 gap-6 pt-4">
+          {/* Left Column: Avatar & Logout Card */}
+          <GlassPanel className="p-6 text-center space-y-6 flex flex-col justify-between shadow-xl">
+            <div className="flex flex-col items-center">
+              <div className="h-20 w-20 rounded-full bg-blue-600 flex items-center justify-center text-white text-3xl font-bold shadow-lg shadow-blue-500/20 mb-4">
+                {user?.name ? user.name.charAt(0).toUpperCase() : "U"}
+              </div>
 
-            <h2 className="text-2xl font-bold text-white">{user?.name || "User Profile"}</h2>
-            <p className="text-slate-400 text-sm mt-1">{user?.email}</p>
+              <h2 className="text-xl font-bold text-slate-800 dark:text-white leading-tight">{user?.name || "User Profile"}</h2>
+              <p className="text-slate-500 dark:text-slate-400 text-xs mt-1">{user?.email}</p>
+              
+              <div className="mt-4 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase">
+                <ShieldCheck size={14} />
+                {user?.subscription || "Free Tier"} User
+              </div>
+            </div>
             
-            <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-xs font-semibold text-blue-400 uppercase">
-              <ShieldCheck size={14} />
-              {user?.subscription || "Free Tier"} User
+            <div className="pt-6 border-t border-slate-200/50 dark:border-slate-800/40">
+              <Button
+                onClick={handleLogout}
+                className="w-full flex items-center justify-center gap-2 bg-red-650 hover:bg-red-500 text-white font-semibold py-3 transition rounded-xl duration-200"
+              >
+                <LogOut size={16} />
+                Sign Out
+              </Button>
             </div>
-          </div>
+          </GlassPanel>
 
-          {/* Details */}
-          <div className="py-6 space-y-5">
-            <div className="flex items-center gap-4 text-slate-300">
-              <div className="p-2 rounded-xl bg-slate-800 text-slate-400">
-                <User size={18} />
+          {/* Right Column: User specs details */}
+          <GlassPanel className="p-6 space-y-6 shadow-xl">
+            <h3 className="text-md font-bold text-slate-850 dark:text-white border-b border-slate-200/50 dark:border-slate-800/40 pb-3">
+              Account Information
+            </h3>
+
+            <div className="space-y-5">
+              <div className="flex items-center gap-4 text-slate-700 dark:text-slate-350">
+                <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-500 border border-blue-500/20">
+                  <User size={18} />
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Full Name</p>
+                  <p className="text-slate-800 dark:text-white font-semibold text-sm">{user?.name || "N/A"}</p>
+                </div>
               </div>
-              <div>
-                <p className="text-xs text-slate-500 uppercase font-semibold">Full Name</p>
-                <p className="text-white font-medium">{user?.name || "N/A"}</p>
+
+              <div className="flex items-center gap-4 text-slate-700 dark:text-slate-350">
+                <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-500 border border-blue-500/20">
+                  <Mail size={18} />
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Email Address</p>
+                  <p className="text-slate-800 dark:text-white font-semibold text-sm">{user?.email || "N/A"}</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-4 text-slate-700 dark:text-slate-350">
+                <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-500 border border-blue-500/20">
+                  <Calendar size={18} />
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Member Since</p>
+                  <p className="text-slate-800 dark:text-white font-semibold text-sm">{registerDate}</p>
+                </div>
               </div>
             </div>
-
-            <div className="flex items-center gap-4 text-slate-300">
-              <div className="p-2 rounded-xl bg-slate-800 text-slate-400">
-                <Mail size={18} />
-              </div>
-              <div>
-                <p className="text-xs text-slate-500 uppercase font-semibold">Email Address</p>
-                <p className="text-white font-medium">{user?.email || "N/A"}</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-4 text-slate-300">
-              <div className="p-2 rounded-xl bg-slate-800 text-slate-400">
-                <Calendar size={18} />
-              </div>
-              <div>
-                <p className="text-xs text-slate-500 uppercase font-semibold">Member Since</p>
-                <p className="text-white font-medium">{registerDate}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Actions */}
-          <div className="pt-6 border-t border-slate-800">
-            <Button
-              onClick={handleLogout}
-              className="w-full flex items-center justify-center gap-2 bg-red-600 hover:bg-red-500 text-white font-semibold py-3 transition rounded-xl"
-            >
-              <LogOut size={18} />
-              Sign Out
-            </Button>
-          </div>
+          </GlassPanel>
         </div>
-      </div>
+      </PageShell>
     </AppShell>
   );
 }

@@ -1,0 +1,55 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: |
+            server/package-lock.json
+            client/package-lock.json
+
+      # --- Server Checks ---
+      - name: Install Server Dependencies
+        run: |
+          cd server
+          npm ci
+
+      - name: Build & Compile Server
+        run: |
+          cd server
+          npm run build
+
+      - name: Run Server Typecheck
+        run: |
+          cd server
+          npm run typecheck
+
+      # --- Client Checks ---
+      - name: Install Client Dependencies
+        run: |
+          cd client
+          npm ci
+
+      - name: Build & Compile Client
+        run: |
+          cd client
+          npm run build

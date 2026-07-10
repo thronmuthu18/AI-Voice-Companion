@@ -4,6 +4,7 @@ import { authService } from "../services/auth.service";
 
 import {
   TOKEN_KEY,
+  REFRESH_TOKEN_KEY,
   USER_KEY,
 } from "../lib/constants";
 
@@ -73,6 +74,12 @@ export const useAuthStore = create<AuthState>((set) => ({
 
 
 
+      if (response.refreshToken) {
+        localStorage.setItem(REFRESH_TOKEN_KEY, response.refreshToken);
+      }
+
+
+
       localStorage.setItem(
 
         USER_KEY,
@@ -136,6 +143,8 @@ export const useAuthStore = create<AuthState>((set) => ({
   logout() {
 
     localStorage.removeItem(TOKEN_KEY);
+
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
 
     localStorage.removeItem(USER_KEY);
 

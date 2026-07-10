@@ -3,6 +3,7 @@ import AppShell from "../components/layout/AppShell";
 import ChatMessages, {
   ChatMessage,
 } from "../components/chat/ChatMessages";
+import EmptyState from "../components/chat/EmptyState";
 import ChatComposer from "../components/chat/ChatComposer";
 import { useChatStore } from "../stores/chat.store";
 import { useMessageStore } from "../stores/message.store";
@@ -109,7 +110,7 @@ export default function Chat() {
       >
         {/* Visual Drop Overlay */}
         {isDragging && (
-          <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-md border-4 border-dashed border-blue-500/50 m-4 rounded-3xl pointer-events-none animate-fade-in">
+          <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/85 backdrop-blur-md border-4 border-dashed border-blue-500/50 m-4 rounded-3xl pointer-events-none animate-fade-in">
             <div className="p-4 rounded-2xl bg-blue-600/10 border border-blue-500/30 text-blue-500 mb-3 animate-bounce">
               <Upload size={32} />
             </div>
@@ -120,13 +121,29 @@ export default function Chat() {
           </div>
         )}
 
-        <ChatMessages messages={formattedMessages} />
-
-        <ChatComposer
-          onSend={handleSend}
-          isLoading={isLoading}
-          droppedFiles={droppedFiles}
-        />
+        {formattedMessages.length === 0 ? (
+          <div className="flex-1 flex flex-col items-center justify-center p-6 space-y-6 max-w-4xl mx-auto w-full">
+            <div className="w-full flex-1 flex items-center justify-center">
+              <EmptyState />
+            </div>
+            <div className="w-full pb-8">
+              <ChatComposer
+                onSend={handleSend}
+                isLoading={isLoading}
+                droppedFiles={droppedFiles}
+              />
+            </div>
+          </div>
+        ) : (
+          <>
+            <ChatMessages messages={formattedMessages} />
+            <ChatComposer
+              onSend={handleSend}
+              isLoading={isLoading}
+              droppedFiles={droppedFiles}
+            />
+          </>
+        )}
       </div>
     </AppShell>
   );
