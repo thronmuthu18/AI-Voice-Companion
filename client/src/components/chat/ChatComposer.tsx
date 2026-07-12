@@ -1,7 +1,6 @@
 import {
   Loader2,
   Mic,
-  MicOff,
   Paperclip,
   SendHorizontal,
   X,
@@ -13,6 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Attachment } from "../../types/api.types";
 import api from "../../services/api";
 import { API_BASE_URL } from "../../lib/constants";
+import AiPresence from "../ui/AiPresence";
 
 interface ChatComposerProps {
   disabled?: boolean;
@@ -484,14 +484,14 @@ export default function ChatComposer({
             type="button"
             onClick={toggleListening}
             disabled={disabled || isLoading || isUploadingAny}
-            className={`rounded-xl p-2 transition duration-200 disabled:opacity-50 hover:scale-105 active:scale-95 ${
+            className={`rounded-xl p-2 transition duration-200 disabled:opacity-50 hover:scale-105 active:scale-95 flex items-center justify-center ${
               isListening
-                ? "bg-red-650 text-white animate-pulse"
+                ? "bg-blue-500/10 text-blue-500 border border-blue-500/20"
                 : "text-slate-450 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-white"
             }`}
             title={isListening ? "Stop Listening" : "Start Voice Input"}
           >
-            {isListening ? <MicOff size={20} /> : <Mic size={20} />}
+            {isListening ? <AiPresence state="listening" size={20} /> : <Mic size={20} />}
           </button>
 
           <button

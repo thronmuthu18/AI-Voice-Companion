@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { messageService } from "../services/message.service";
 import { aiService } from "../services/ai.service";
 import type { Message, Attachment } from "../types/api.types";
+import { useSubscriptionStore } from "./subscription.store";
 
 interface MessageState {
   messages: Message[];
@@ -131,8 +132,6 @@ export const useMessageStore = create<MessageState>((set) => ({
         attachments  // ← forward attachments to backend stream
       );
     } catch (error: any) {
-      const { useSubscriptionStore } = require("./subscription.store");
-      
       if (error.code === "APP_DAILY_QUOTA_EXCEEDED") {
         set((state) => ({
           isLoading: false,

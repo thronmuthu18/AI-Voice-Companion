@@ -1,5 +1,6 @@
 import api from "./api";
 import type { AIChatResponse, Attachment } from "../types/api.types";
+import { API_BASE_URL } from "../lib/constants";
 
 export class AIService {
   async generateResponse(
@@ -31,7 +32,7 @@ export class AIService {
     );
 
     const response = await fetch(
-      "http://localhost:5000/api/ai/stream",
+      `${API_BASE_URL}/ai/stream`,
       {
         method: "POST",
         headers: {

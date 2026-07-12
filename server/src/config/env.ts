@@ -43,7 +43,7 @@ const envSchema = z.object({
   DEFAULT_IMAGE_EDIT_PROVIDER: z.string().default('openai'),
   ENABLE_PROVIDER_ROUTER: z.preprocess((val) => val === 'true' || val === true, z.boolean()).default(true),
 
-  OPENAI_API_KEY: z.string().min(1),
+  OPENAI_API_KEY: z.string().default(''),
 });
 
 export type Env = z.infer<typeof envSchema>;

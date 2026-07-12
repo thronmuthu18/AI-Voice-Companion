@@ -1,6 +1,6 @@
-import { Sparkles } from "lucide-react";
 import { motion } from "framer-motion";
 import GlassPanel from "../ui/GlassPanel";
+import AiPresence from "../ui/AiPresence";
 
 export default function EmptyState() {
   return (
@@ -12,15 +12,15 @@ export default function EmptyState() {
         className="w-full max-w-md"
       >
         <GlassPanel className="p-8 text-center space-y-6">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-600/10 border border-blue-500/20 text-blue-500 shadow-lg">
-            <Sparkles size={28} />
+          <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-2xl bg-transparent">
+            <AiPresence state="idle" size={96} />
           </div>
 
           <div className="space-y-2">
-            <h2 className="text-2xl font-extrabold text-slate-850 dark:text-white tracking-tight">
+            <h2 className="text-2xl font-extrabold text-slate-855 dark:text-white tracking-tight">
               Welcome to MuthuAI
             </h2>
-            <p className="text-sm text-slate-550 dark:text-slate-400 leading-relaxed">
+            <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
               Start a new conversation with your AI assistant. Ask questions, analyze assets, and build anything with AI.
             </p>
           </div>

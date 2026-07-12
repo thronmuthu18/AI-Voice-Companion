@@ -1,7 +1,7 @@
 export const APP_NAME = "MuthuAI";
 
 export const API_BASE_URL =
-  "http://localhost:5000/api";
+  import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
 export const TOKEN_KEY =
   "muthuai_access_token";
