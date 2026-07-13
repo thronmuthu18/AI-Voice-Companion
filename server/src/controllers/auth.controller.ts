@@ -164,14 +164,14 @@ export class AuthController {
       }
 
       // Set secure HttpOnly cookies for additional XSS protection
-      res.cookie("muthuai_access_token", accessToken, {
+      res.cookie("champai_access_token", accessToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "strict",
         maxAge: 15 * 60 * 1000, // 15 mins
       });
 
-      res.cookie("muthuai_refresh_token", refreshToken, {
+      res.cookie("champai_refresh_token", refreshToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "strict",
@@ -292,7 +292,7 @@ export class AuthController {
         role: user.role,
       });
 
-      res.cookie("muthuai_access_token", newAccessToken, {
+      res.cookie("champai_access_token", newAccessToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "strict",
@@ -334,6 +334,8 @@ export class AuthController {
 
       auditService.log("LOGOUT", userId, {}, req.ip);
 
+      res.clearCookie("champai_access_token");
+      res.clearCookie("champai_refresh_token");
       res.clearCookie("muthuai_access_token");
       res.clearCookie("muthuai_refresh_token");
 
@@ -361,6 +363,8 @@ export class AuthController {
 
       auditService.log("LOGOUT_ALL", userId, {}, req.ip);
 
+      res.clearCookie("champai_access_token");
+      res.clearCookie("champai_refresh_token");
       res.clearCookie("muthuai_access_token");
       res.clearCookie("muthuai_refresh_token");
 

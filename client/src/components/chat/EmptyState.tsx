@@ -18,7 +18,7 @@ export default function EmptyState() {
 
           <div className="space-y-2">
             <h2 className="text-2xl font-extrabold text-slate-855 dark:text-white tracking-tight">
-              Welcome to MuthuAI
+              Welcome to Champ.ai
             </h2>
             <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
               Start a new conversation with your AI assistant. Ask questions, analyze assets, and build anything with AI.

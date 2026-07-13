@@ -11,7 +11,7 @@ export default function Header() {
   const user = useAuthStore((state) => state.user);
 
   const [theme, setTheme] = useState(() => {
-    return localStorage.getItem("muthuai_theme") || "dark";
+    return localStorage.getItem("champai_theme") || "dark";
   });
 
   useEffect(() => {
@@ -26,12 +26,12 @@ export default function Header() {
   const toggleTheme = () => {
     const nextTheme = theme === "dark" ? "light" : "dark";
     setTheme(nextTheme);
-    localStorage.setItem("muthuai_theme", nextTheme);
+    localStorage.setItem("champai_theme", nextTheme);
   };
 
   // Set titles based on the active path/selection
   let title = "Welcome 👋";
-  let subtitle = "MuthuAI Operating System";
+  let subtitle = "Champ.ai Operating System";
 
   if (location.pathname === "/settings") {
     title = "Settings";

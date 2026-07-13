@@ -6,7 +6,7 @@ interface ChatHeaderProps {
 }
 
 export default function ChatHeader({
-  title = "MuthuAI",
+  title = "Champ.ai",
   subtitle = "AI Assistant",
 }: ChatHeaderProps) {
   return (

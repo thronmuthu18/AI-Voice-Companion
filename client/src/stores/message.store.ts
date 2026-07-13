@@ -89,7 +89,7 @@ export const useMessageStore = create<MessageState>((set) => ({
             set({ messages, isLoading: false });
 
             // Automatically speak response if Auto Speak preference is active
-            const autoSpeak = localStorage.getItem("muthuai_auto_speak") === "true";
+            const autoSpeak = localStorage.getItem("champai_auto_speak") === "true";
             if (autoSpeak && messages.length > 0) {
               const lastMsg = messages[messages.length - 1];
               const role = lastMsg.role || (lastMsg as any).sender || "user";

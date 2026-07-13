@@ -89,7 +89,7 @@ export default function Sidebar() {
           <Bot size={20} color="white" />
         </div>
         <div>
-          <h1 className="text-md font-bold text-slate-800 dark:text-white leading-tight">MuthuAI</h1>
+          <h1 className="text-md font-bold text-slate-800 dark:text-white leading-tight">Champ.ai</h1>
           <p className="text-[10px] text-slate-500 dark:text-slate-400">AI Operating System</p>
         </div>
       </div>

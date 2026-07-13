@@ -299,7 +299,7 @@ export default function Pricing() {
                 onClick={() => setPaymentPrepModalOpen(false)}
                 className="w-full rounded-xl bg-blue-600 hover:bg-blue-500 transition text-white py-3 text-sm font-semibold shadow-md active:scale-95 duration-200"
               >
-                Continue using MuthuAI
+                Continue using Champ.ai
               </button>
             </div>
           </div>

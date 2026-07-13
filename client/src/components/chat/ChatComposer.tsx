@@ -44,7 +44,7 @@ export default function ChatComposer({
 
   // Multilingual Speech Input Lang selection state
   const [speechLang, setSpeechLang] = useState(() => {
-    return localStorage.getItem("muthuai_speech_lang") || "en-US";
+    return localStorage.getItem("champai_speech_lang") || "en-US";
   });
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -200,7 +200,7 @@ export default function ChatComposer({
   const toggleSpeechLang = () => {
     const nextLang = speechLang === "en-US" ? "ta-IN" : "en-US";
     setSpeechLang(nextLang);
-    localStorage.setItem("muthuai_speech_lang", nextLang);
+    localStorage.setItem("champai_speech_lang", nextLang);
   };
 
   const toggleListening = () => {
@@ -436,7 +436,7 @@ export default function ChatComposer({
             placeholder={
               isListening
                 ? `Listening in ${speechLang === "ta-IN" ? "Tamil" : "English"}...`
-                : "Message MuthuAI (Paste or Drag files directly)..."
+                : "Message Champ.ai (Paste or Drag files directly)..."
             }
             className="
               min-h-[28px]
@@ -531,7 +531,7 @@ export default function ChatComposer({
         </div>
 
         <p className="mt-3 text-center text-xs text-slate-500">
-          MuthuAI can make mistakes. Please verify important information.
+          Champ.ai can make mistakes. Please verify important information.
         </p>
       </div>
     </div>

@@ -7,7 +7,7 @@ export default function Login() {
     <AuthLayout>
       <AuthCard
         title="Welcome Back"
-        subtitle="Sign in to continue to MuthuAI"
+        subtitle="Sign in to continue to Champ.ai"
       >
         <LoginForm />
       </AuthCard>

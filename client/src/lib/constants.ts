@@ -1,16 +1,16 @@
-export const APP_NAME = "MuthuAI";
+export const APP_NAME = "Champ.ai";
 
 export const API_BASE_URL =
   import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
 export const TOKEN_KEY =
-  "muthuai_access_token";
+  "champai_access_token";
 
 export const REFRESH_TOKEN_KEY =
-  "muthuai_refresh_token";
+  "champai_refresh_token";
 
 export const USER_KEY =
-  "muthuai_user";
+  "champai_user";
 
 export const API_ENDPOINTS = {
   LOGIN: "/auth/login",

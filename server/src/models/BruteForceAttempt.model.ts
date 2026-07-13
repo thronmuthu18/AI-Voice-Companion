@@ -1,7 +1,7 @@
 import mongoose, { Schema, Document } from "mongoose";
 
 export interface IBruteForceAttempt extends Document {
-  key: string; // e.g., "ip:127.0.0.1" or "email:test@muthuai.com"
+  key: string; // e.g., "ip:127.0.0.1" or "email:test@champ.ai"
   action: string; // "login" | "register" | "reset"
   count: number;
   lockUntil: Date | null;

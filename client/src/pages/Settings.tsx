@@ -6,11 +6,11 @@ import { Moon, Sun, Volume2, Shield } from "lucide-react";
 
 export default function Settings() {
   const [theme, setTheme] = useState(() => {
-    return localStorage.getItem("muthuai_theme") || "dark";
+    return localStorage.getItem("champai_theme") || "dark";
   });
 
   const [voiceAutoSpeak, setVoiceAutoSpeak] = useState(() => {
-    return localStorage.getItem("muthuai_auto_speak") === "true";
+    return localStorage.getItem("champai_auto_speak") === "true";
   });
 
   // Apply theme class to document element on changes
@@ -21,17 +21,17 @@ export default function Settings() {
     } else {
       root.classList.remove("dark");
     }
-    localStorage.setItem("muthuai_theme", theme);
+    localStorage.setItem("champai_theme", theme);
   }, [theme]);
 
   // Sync auto speak setting
   useEffect(() => {
-    localStorage.setItem("muthuai_auto_speak", String(voiceAutoSpeak));
+    localStorage.setItem("champai_auto_speak", String(voiceAutoSpeak));
   }, [voiceAutoSpeak]);
 
   return (
     <AppShell>
-      <PageShell title="Settings" description="Configure your MuthuAI system interface settings and configurations" noCard>
+      <PageShell title="Settings" description="Configure your Champ.ai system interface settings and configurations" noCard>
         <div className="grid md:grid-cols-2 gap-6 pt-4">
           {/* Card 1: Appearance Bento Card */}
           <GlassPanel className="p-6 space-y-4 flex flex-col justify-between shadow-xl">
@@ -116,7 +116,7 @@ export default function Settings() {
               <div className="space-y-1">
                 <h3 className="text-md font-bold text-slate-800 dark:text-white">Secure Encrypted Sessions</h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  MuthuAI utilizes state-of-the-art JSON Web Token (JWT) standards to encrypt connection streams. Sessions remain protected on every exchange.
+                  Champ.ai utilizes state-of-the-art JSON Web Token (JWT) standards to encrypt connection streams. Sessions remain protected on every exchange.
                 </p>
               </div>
             </div>

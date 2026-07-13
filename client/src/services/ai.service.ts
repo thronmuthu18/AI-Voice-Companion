@@ -28,7 +28,7 @@ export class AIService {
     attachments?: Attachment[]
   ): Promise<void> {
     const token = localStorage.getItem(
-      "muthuai_access_token"
+      "champai_access_token"
     );
 
     const response = await fetch(

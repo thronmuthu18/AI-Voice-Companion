@@ -15,7 +15,10 @@ export async function authenticate(
     if (authHeader && authHeader.startsWith("Bearer ")) {
       token = authHeader.substring(7);
     } else if (req.headers.cookie) {
-      const match = req.headers.cookie.match(/muthuai_access_token=([^;]+)/);
+      let match = req.headers.cookie.match(/champai_access_token=([^;]+)/);
+      if (!match) {
+        match = req.headers.cookie.match(/muthuai_access_token=([^;]+)/);
+      }
       if (match) {
         token = match[1];
       }

@@ -7,7 +7,7 @@ export default function Register() {
     <AuthLayout>
       <AuthCard
         title="Create Account"
-        subtitle="Get started with MuthuAI OS today"
+        subtitle="Get started with Champ.ai OS today"
       >
         <RegisterForm />
       </AuthCard>

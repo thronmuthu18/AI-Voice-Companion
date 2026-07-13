@@ -40,7 +40,7 @@ export class IntelligenceService {
       }
 
       const systemMessage =
-        "You are the Core Intelligence Engine for MuthuAI. Your task is to analyze user queries and context to perform intent classification.\n\n" +
+        "You are the Core Intelligence Engine for Champ.ai. Your task is to analyze user queries and context to perform intent classification.\n\n" +
         "Available Intents:\n" +
         "- general_chat (normal chat conversations)\n" +
         "- programming (conceptual software engineering questions)\n" +
