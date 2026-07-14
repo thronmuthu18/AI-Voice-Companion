@@ -7,10 +7,27 @@ import { dbHealthCheck } from "./db-health.middleware";
 import { noSQLSanitizer, hppProtection, xssSanitizer } from "./sanitize.middleware";
 import { globalErrorHandler, notFoundHandler } from "./error.middleware";
 
-// CORS whitelist — reads from environment variable for flexibility
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:5173,http://localhost:3000")
-  .split(",")
-  .map((o) => o.trim());
+// CORS whitelist — reads from environment variable and CLIENT_URL for flexibility
+const allowedOrigins: string[] = [];
+
+const addAllowedOrigin = (originStr?: string) => {
+  if (!originStr) return;
+  const trimmed = originStr.trim().replace(/\/$/, ""); // trim and strip trailing slash
+  if (trimmed && !allowedOrigins.includes(trimmed)) {
+    allowedOrigins.push(trimmed);
+  }
+};
+
+// Populate whitelist
+if (process.env.ALLOWED_ORIGINS) {
+  process.env.ALLOWED_ORIGINS.split(",").forEach((o) => addAllowedOrigin(o));
+}
+addAllowedOrigin(process.env.CLIENT_URL);
+addAllowedOrigin("https://champai-theta.vercel.app");
+
+// Fallback defaults for safety in development
+addAllowedOrigin("http://localhost:5173");
+addAllowedOrigin("http://localhost:3000");
 
 export function applyMiddleware(app: Application): void {
   // 1. Helmet — security headers (CSP, HSTS, X-Frame-Options, etc.)
@@ -40,21 +57,25 @@ export function applyMiddleware(app: Application): void {
         // Allow requests with no origin (Thunder Client, Postman, server-to-server)
         if (!origin) return callback(null, true);
 
+        const normalizedOrigin = origin.trim().replace(/\/$/, "");
+
         // In development: allow any localhost or 127.0.0.1 origin on any port
-        if (isDev && (origin.startsWith("http://localhost") || origin.startsWith("http://127.0.0.1"))) {
+        if (isDev && (normalizedOrigin.startsWith("http://localhost") || normalizedOrigin.startsWith("http://127.0.0.1"))) {
           return callback(null, true);
         }
 
-        // In production: enforce strict whitelist from ALLOWED_ORIGINS env var
-        if (allowedOrigins.includes(origin)) {
+        // In production: enforce strict whitelist
+        if (allowedOrigins.includes(normalizedOrigin)) {
           return callback(null, true);
         }
 
-        return callback(new Error(`CORS: Origin '${origin}' is not allowed.`), false);
+        console.warn(`Blocked by CORS: '${origin}'`);
+        return callback(null, false);
       },
       credentials: true,
       methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+      allowedHeaders: ["Content-Type", "Authorization"],
+      optionsSuccessStatus: 204,
     })
   );
 
