@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import mongoose from "mongoose";
 import { chatService } from "../services/chat.service";
 
 export class ChatController {
@@ -8,7 +9,6 @@ export class ChatController {
     res: Response
   ) {
     try {
-
       const userId = (req as any).user.userId;
 
       const chat = await chatService.createChat(
@@ -23,12 +23,10 @@ export class ChatController {
       });
 
     } catch (error: any) {
-
       return res.status(500).json({
         success: false,
-        message: error.message,
+        message: "An error occurred.",
       });
-
     }
   }
 
@@ -37,7 +35,6 @@ export class ChatController {
     res: Response
   ) {
     try {
-
       const userId = (req as any).user.userId;
       const archived = req.query.archived === "true";
 
@@ -49,12 +46,10 @@ export class ChatController {
       });
 
     } catch (error: any) {
-
       return res.status(500).json({
         success: false,
-        message: error.message,
+        message: "An error occurred.",
       });
-
     }
   }
 
@@ -63,12 +58,21 @@ export class ChatController {
     res: Response
   ) {
     try {
-
+      const userId = (req as any).user.userId;
       const { chatId } = req.params;
       const { title } = req.body;
 
+      if (!chatId || !mongoose.Types.ObjectId.isValid(chatId)) {
+        return res.status(400).json({ success: false, message: "Invalid chat ID." });
+      }
+
+      if (!title || typeof title !== "string" || !title.trim()) {
+        return res.status(400).json({ success: false, message: "Title is required." });
+      }
+
       const chat = await chatService.renameChat(
         chatId,
+        userId,
         title
       );
 
@@ -79,12 +83,13 @@ export class ChatController {
       });
 
     } catch (error: any) {
-
+      if (error.statusCode === 403) {
+        return res.status(403).json({ success: false, message: "Forbidden." });
+      }
       return res.status(500).json({
         success: false,
-        message: error.message,
+        message: "An error occurred.",
       });
-
     }
   }
 
@@ -93,10 +98,14 @@ export class ChatController {
     res: Response
   ) {
     try {
-
+      const userId = (req as any).user.userId;
       const { chatId } = req.params;
 
-      const chat = await chatService.pinChat(chatId);
+      if (!chatId || !mongoose.Types.ObjectId.isValid(chatId)) {
+        return res.status(400).json({ success: false, message: "Invalid chat ID." });
+      }
+
+      const chat = await chatService.pinChat(chatId, userId);
 
       return res.status(200).json({
         success: true,
@@ -105,12 +114,13 @@ export class ChatController {
       });
 
     } catch (error: any) {
-
+      if (error.statusCode === 403) {
+        return res.status(403).json({ success: false, message: "Forbidden." });
+      }
       return res.status(500).json({
         success: false,
-        message: error.message,
+        message: "An error occurred.",
       });
-
     }
   }
 
@@ -119,10 +129,14 @@ export class ChatController {
     res: Response
   ) {
     try {
-
+      const userId = (req as any).user.userId;
       const { chatId } = req.params;
 
-      const chat = await chatService.archiveChat(chatId);
+      if (!chatId || !mongoose.Types.ObjectId.isValid(chatId)) {
+        return res.status(400).json({ success: false, message: "Invalid chat ID." });
+      }
+
+      const chat = await chatService.archiveChat(chatId, userId);
 
       return res.status(200).json({
         success: true,
@@ -131,12 +145,13 @@ export class ChatController {
       });
 
     } catch (error: any) {
-
+      if (error.statusCode === 403) {
+        return res.status(403).json({ success: false, message: "Forbidden." });
+      }
       return res.status(500).json({
         success: false,
-        message: error.message,
+        message: "An error occurred.",
       });
-
     }
   }
 
@@ -145,10 +160,14 @@ export class ChatController {
     res: Response
   ) {
     try {
-
+      const userId = (req as any).user.userId;
       const { chatId } = req.params;
 
-      await chatService.deleteChat(chatId);
+      if (!chatId || !mongoose.Types.ObjectId.isValid(chatId)) {
+        return res.status(400).json({ success: false, message: "Invalid chat ID." });
+      }
+
+      await chatService.deleteChat(chatId, userId);
 
       return res.status(200).json({
         success: true,
@@ -156,12 +175,13 @@ export class ChatController {
       });
 
     } catch (error: any) {
-
+      if (error.statusCode === 403) {
+        return res.status(403).json({ success: false, message: "Forbidden." });
+      }
       return res.status(500).json({
         success: false,
-        message: error.message,
+        message: "An error occurred.",
       });
-
     }
   }
 

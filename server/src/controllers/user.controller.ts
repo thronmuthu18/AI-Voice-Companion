@@ -5,7 +5,10 @@ export class UserController {
   async getProfile(req: Request, res: Response) {
     try {
       const userId = (req as any).user.userId;
-      const user = await User.findById(userId).select("-password");
+      // Exclude all sensitive and internal-only fields from profile response
+      const user = await User.findById(userId).select(
+        "-password -refreshTokens -failedLoginAttempts -lockUntil"
+      );
 
       if (!user) {
         return res.status(404).json({
@@ -22,7 +25,7 @@ export class UserController {
     } catch (error: any) {
       return res.status(500).json({
         success: false,
-        message: error.message || "Internal Server Error",
+        message: "An error occurred.",
       });
     }
   }
@@ -40,7 +43,7 @@ export class UserController {
     } catch (error: any) {
       return res.status(500).json({
         success: false,
-        message: error.message || "Internal Server Error",
+        message: "An error occurred.",
       });
     }
   }

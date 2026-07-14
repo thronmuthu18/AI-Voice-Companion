@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import mongoose from "mongoose";
 import { chatService } from "../services/chat.service";
 import { messageService } from "../services/message.service";
 import { streamService } from "../services/stream.service";
@@ -7,6 +8,9 @@ import { contextService } from "../services/context.service";
 import { coordinatorAgent } from "../services/agents/coordinator.agent";
 import { auditService } from "../services/audit.service";
 import { entitlementService } from "../services/entitlement.service";
+
+// Maximum user prompt length before rejecting (prevent provider cost abuse)
+const MAX_PROMPT_LENGTH = 8000;
 
 export class AIController {
   async generateResponse(
@@ -25,7 +29,21 @@ export class AIController {
         });
       }
 
-      await chatService.updateChatTitle(chatId, message);
+      // Validate chatId format before any DB query
+      if (!mongoose.Types.ObjectId.isValid(chatId)) {
+        return res.status(400).json({ success: false, message: "Invalid chat ID." });
+      }
+
+      // Reject oversized prompts before calling AI providers (cost protection)
+      if (typeof message !== "string" || message.length > MAX_PROMPT_LENGTH) {
+        return res.status(413).json({
+          success: false,
+          code: "PROMPT_TOO_LONG",
+          message: `Message exceeds maximum allowed length of ${MAX_PROMPT_LENGTH} characters.`,
+        });
+      }
+
+      await chatService.updateChatTitle(chatId, userId, message);
 
       // Resolve context & classify intent through modular Intelligence Layer
       const { hasImage, hasDocument, latestImage, latestDocument, latestAudio } = await intelligenceService.resolveContext(chatId, requestAttachments);
@@ -100,7 +118,23 @@ export class AIController {
         return;
       }
 
-      await chatService.updateChatTitle(chatId, message);
+      // Validate chatId format
+      if (!mongoose.Types.ObjectId.isValid(chatId)) {
+        res.status(400).json({ success: false, message: "Invalid chat ID." });
+        return;
+      }
+
+      // Reject oversized prompts before calling AI providers (cost protection)
+      if (typeof message !== "string" || message.length > MAX_PROMPT_LENGTH) {
+        res.status(413).json({
+          success: false,
+          code: "PROMPT_TOO_LONG",
+          message: `Message exceeds maximum allowed length of ${MAX_PROMPT_LENGTH} characters.`,
+        });
+        return;
+      }
+
+      await chatService.updateChatTitle(chatId, userId, message);
 
       // Resolve context & classify intent through modular Intelligence Layer
       const { hasImage, hasDocument, latestImage, latestDocument, latestAudio } = await intelligenceService.resolveContext(chatId, requestAttachments);

@@ -69,3 +69,14 @@ export const streamLimiter = rateLimit({
   statusCode: 429,
   handler: limitHandler("stream_api", "Streaming request limit reached. Please try again later."),
 });
+
+// Per-minute burst limiter for AI chat endpoints (anti-abuse, separate from daily quotas)
+// Prevents rapid-fire automated prompts even for PRO users with unlimited daily quotas
+export const burstLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute window
+  max: 15,              // 15 requests per minute max
+  standardHeaders: true,
+  legacyHeaders: false,
+  statusCode: 429,
+  handler: limitHandler("burst_abuse", "Too many requests in a short window. Please slow down and try again."),
+});

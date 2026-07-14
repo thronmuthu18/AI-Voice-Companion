@@ -39,6 +39,7 @@ const UserSchema = new Schema<IUser>(
 
     password: {
       type: String,
+      select: false, // Never returned by default — must be explicitly selected
     },
 
     avatar: {
@@ -93,6 +94,7 @@ const UserSchema = new Schema<IUser>(
     refreshTokens: {
       type: [String],
       default: [],
+      select: false, // Never returned by default
     },
   },
   {

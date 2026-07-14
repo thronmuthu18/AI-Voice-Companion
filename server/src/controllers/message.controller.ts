@@ -1,5 +1,7 @@
 import { Request, Response } from "express";
+import mongoose from "mongoose";
 import { messageService } from "../services/message.service";
+import Chat from "../models/Chat.model";
 
 export class MessageController {
   async createMessage(
@@ -7,14 +9,29 @@ export class MessageController {
     res: Response
   ): Promise<Response> {
     try {
-      const { chatId, role, content, attachment, attachments } = req.body;
+      const { chatId, content, attachment, attachments } = req.body;
+      // SECURITY: role is NEVER accepted from the client. It is always "user".
+      const role: "user" = "user";
+      const userId = (req as any).user?.userId;
 
-      if (!chatId || !role || !content) {
+      if (!chatId || !content) {
         return res.status(400).json({
           success: false,
-          message:
-            "chatId, role and content are required",
+          message: "chatId and content are required",
         });
+      }
+
+      if (!mongoose.Types.ObjectId.isValid(chatId)) {
+        return res.status(400).json({ success: false, message: "Invalid chat ID." });
+      }
+
+      // IDOR: verify the authenticated user owns this chat
+      const chat = await Chat.findById(chatId);
+      if (!chat) {
+        return res.status(404).json({ success: false, message: "Chat not found." });
+      }
+      if (String(chat.userId) !== String(userId)) {
+        return res.status(403).json({ success: false, message: "Forbidden." });
       }
 
       // Handle single attachment or multiple attachments list
@@ -38,8 +55,7 @@ export class MessageController {
     } catch (error: any) {
       return res.status(500).json({
         success: false,
-        message:
-          error.message || "Internal Server Error",
+        message: "An error occurred.",
       });
     }
   }
@@ -49,6 +65,7 @@ export class MessageController {
     res: Response
   ): Promise<Response> {
     try {
+      const userId = (req as any).user?.userId;
       const { chatId } = req.params;
 
       if (!chatId) {
@@ -56,6 +73,19 @@ export class MessageController {
           success: false,
           message: "chatId is required",
         });
+      }
+
+      if (!mongoose.Types.ObjectId.isValid(chatId)) {
+        return res.status(400).json({ success: false, message: "Invalid chat ID." });
+      }
+
+      // IDOR: verify the authenticated user owns this chat before returning messages
+      const chat = await Chat.findById(chatId);
+      if (!chat) {
+        return res.status(404).json({ success: false, message: "Chat not found." });
+      }
+      if (String(chat.userId) !== String(userId)) {
+        return res.status(403).json({ success: false, message: "Forbidden." });
       }
 
       const messages =
@@ -68,8 +98,7 @@ export class MessageController {
     } catch (error: any) {
       return res.status(500).json({
         success: false,
-        message:
-          error.message || "Internal Server Error",
+        message: "An error occurred.",
       });
     }
   }

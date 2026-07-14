@@ -91,9 +91,14 @@ export class MessageService {
   }
 
   async getConversationHistory(chatId: string) {
+    // Cap history at last 40 messages to prevent unbounded provider API cost abuse
+    const MAX_HISTORY_MESSAGES = 40;
+
     const messages = await Message.find({ chatId }).sort({
       createdAt: 1,
-    });
+    }).limit(MAX_HISTORY_MESSAGES * 2) // fetch extra and take from end
+    .then(msgs => msgs.slice(-MAX_HISTORY_MESSAGES));
+
 
     return messages.map((message) => {
       const role = message.sender as "user" | "assistant";

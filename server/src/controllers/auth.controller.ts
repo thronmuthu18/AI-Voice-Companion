@@ -29,9 +29,20 @@ export class AuthController {
     try {
       const user = await authService.register(name, email, password);
 
-      const userResponse = user.toJSON() as any;
-      delete userResponse.password;
-      delete userResponse.refreshTokens;
+      // Build safe user response — explicitly whitelist returned fields
+      const userResponse: any = {
+        _id: String(user._id),
+        name: user.name,
+        email: user.email,
+        avatar: user.avatar,
+        provider: user.provider,
+        role: user.role,
+        subscription: user.subscription,
+        emailVerified: user.emailVerified,
+        isActive: user.isActive,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+      };
 
       auditService.log("REGISTER", String(user._id), { email }, req.ip);
 
@@ -77,7 +88,8 @@ export class AuthController {
       }
 
       // Look up user directly to apply brute-force checks
-      const user = await User.findOne({ email: email.toLowerCase().trim() });
+      // Explicitly select +password and +refreshTokens since select:false is set on the model
+      const user = await User.findOne({ email: email.toLowerCase().trim() }).select('+password +refreshTokens');
 
       if (!user || !user.password) {
         auditService.log("FAILED_LOGIN", undefined, { email }, req.ip);
@@ -123,10 +135,7 @@ export class AuthController {
 
         return res.status(401).json({
           success: false,
-          message:
-            newAttempts >= MAX_FAILED_ATTEMPTS
-              ? "Account locked due to too many failed attempts. Try again in 15 minutes."
-              : `Invalid credentials. ${MAX_FAILED_ATTEMPTS - newAttempts} attempt(s) remaining.`,
+          message: "Invalid email or password.",
         });
       }
 
@@ -151,9 +160,21 @@ export class AuthController {
         },
       });
 
-      const userResponse = user.toJSON() as any;
-      delete userResponse.password;
-      delete userResponse.refreshTokens;
+      // Build safe user response — explicitly exclude sensitive fields
+      const userResponse: any = {
+        _id: String(user._id),
+        name: user.name,
+        email: user.email,
+        avatar: user.avatar,
+        provider: user.provider,
+        role: user.role,
+        subscription: user.subscription,
+        emailVerified: user.emailVerified,
+        isActive: user.isActive,
+        lastLogin: user.lastLogin,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+      };
 
       auditService.log("LOGIN", String(user._id), { email }, req.ip);
 
@@ -167,14 +188,16 @@ export class AuthController {
       res.cookie("champai_access_token", accessToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
-        sameSite: "strict",
+        // Use "none" (cross-site) for Vercel frontend -> Render backend architecture
+        // Must be "none" + secure:true for credentials to work cross-origin
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
         maxAge: 15 * 60 * 1000, // 15 mins
       });
 
       res.cookie("champai_refresh_token", refreshToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
-        sameSite: "strict",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
         maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
       });
 
@@ -263,7 +286,8 @@ export class AuthController {
       }
 
       // Check the token exists in the user's stored token list
-      const user = await User.findById(payload.userId);
+      // Explicitly select +refreshTokens since select:false is set on the model
+      const user = await User.findById(payload.userId).select('+refreshTokens');
       if (!user) {
         return res.status(401).json({ success: false, message: "User not found" });
       }
@@ -295,7 +319,7 @@ export class AuthController {
       res.cookie("champai_access_token", newAccessToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
-        sameSite: "strict",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
         maxAge: 15 * 60 * 1000, // 15 mins
       });
 
@@ -318,7 +342,8 @@ export class AuthController {
       const userId = (req as any).user?.userId;
 
       if (refreshToken && userId) {
-        const user = await User.findById(userId);
+        // Explicitly select +refreshTokens since select:false is set on the model
+        const user = await User.findById(userId).select('+refreshTokens');
         if (user) {
           // Remove this specific device's refresh token
           const remaining: string[] = [];

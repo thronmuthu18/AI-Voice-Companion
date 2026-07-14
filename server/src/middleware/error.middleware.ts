@@ -88,9 +88,9 @@ export function globalErrorHandler(
 }
 
 // 404 handler for unmatched routes
-export function notFoundHandler(req: Request, res: Response): void {
+export function notFoundHandler(_req: Request, res: Response): void {
   res.status(404).json({
     success: false,
-    message: `Route not found: ${req.method} ${req.originalUrl}`,
+    message: "The requested resource was not found.",
   });
 }

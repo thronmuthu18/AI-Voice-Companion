@@ -27,12 +27,18 @@ export class ChatService {
 
   async updateChatTitle(
     chatId: string,
+    userId: string,
     firstMessage: string
   ) {
     const chat = await Chat.findById(chatId);
 
     if (!chat) {
       throw new Error("Chat not found");
+    }
+
+    // Ownership check
+    if (String(chat.userId) !== String(userId)) {
+      throw Object.assign(new Error("Forbidden"), { statusCode: 403 });
     }
 
     // Don't overwrite manually renamed chats
@@ -48,7 +54,7 @@ export class ChatService {
       },
       {
         role: "user",
-        content: firstMessage,
+        content: firstMessage.substring(0, 500), // limit to first 500 chars for title generation
       },
     ]);
 
@@ -61,6 +67,7 @@ export class ChatService {
 
   async renameChat(
     chatId: string,
+    userId: string,
     title: string
   ) {
     const chat = await Chat.findById(chatId);
@@ -69,7 +76,12 @@ export class ChatService {
       throw new Error("Chat not found");
     }
 
-    chat.title = title.trim();
+    // Ownership check: prevent IDOR
+    if (String(chat.userId) !== String(userId)) {
+      throw Object.assign(new Error("Forbidden"), { statusCode: 403 });
+    }
+
+    chat.title = title.trim().substring(0, 200);
 
     await chat.save();
 
@@ -77,12 +89,18 @@ export class ChatService {
   }
 
   async pinChat(
-    chatId: string
+    chatId: string,
+    userId: string
   ) {
     const chat = await Chat.findById(chatId);
 
     if (!chat) {
       throw new Error("Chat not found");
+    }
+
+    // Ownership check: prevent IDOR
+    if (String(chat.userId) !== String(userId)) {
+      throw Object.assign(new Error("Forbidden"), { statusCode: 403 });
     }
 
     chat.isPinned = !chat.isPinned;
@@ -93,12 +111,18 @@ export class ChatService {
   }
 
   async archiveChat(
-    chatId: string
+    chatId: string,
+    userId: string
   ) {
     const chat = await Chat.findById(chatId);
 
     if (!chat) {
       throw new Error("Chat not found");
+    }
+
+    // Ownership check: prevent IDOR
+    if (String(chat.userId) !== String(userId)) {
+      throw Object.assign(new Error("Forbidden"), { statusCode: 403 });
     }
 
     chat.isArchived = true;
@@ -109,12 +133,18 @@ export class ChatService {
   }
 
   async deleteChat(
-    chatId: string
+    chatId: string,
+    userId: string
   ) {
     const chat = await Chat.findById(chatId);
 
     if (!chat) {
       throw new Error("Chat not found");
+    }
+
+    // Ownership check: prevent IDOR
+    if (String(chat.userId) !== String(userId)) {
+      throw Object.assign(new Error("Forbidden"), { statusCode: 403 });
     }
 
     await Chat.findByIdAndDelete(chatId);

@@ -37,3 +37,13 @@ Thumbs.db
 .cache/
 *.tmp
 *.temp
+
+# Uploaded user files — must never be committed
+uploads/
+**/uploads/
+
+# Private key material
+*.pem
+*.key
+*.p12
+*.pfx
