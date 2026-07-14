@@ -54,7 +54,8 @@ export class AuthController {
 
       return res.status(201).json({
         success: true,
-        message: "User registered successfully",
+        message: "Verification email sent. Please check your inbox and verify your email before signing in.",
+        verificationEmailSent: true,
         user: userResponse,
       });
 
@@ -136,6 +137,16 @@ export class AuthController {
         return res.status(401).json({
           success: false,
           message: "Invalid email or password.",
+        });
+      }
+
+      // Check email verification status
+      // If not verified, and has a token hash (meaning it's not a pre-migration user who we want to grandfather), reject
+      if (!user.emailVerified && user.emailVerificationTokenHash) {
+        return res.status(403).json({
+          success: false,
+          code: "EMAIL_NOT_VERIFIED",
+          message: "Please verify your email address before signing in.",
         });
       }
 
@@ -402,6 +413,131 @@ export class AuthController {
       return res.status(500).json({
         success: false,
         message: "Logout failed. Please try again.",
+      });
+    }
+  }
+
+  async verifyEmail(req: Request, res: Response) {
+    const { token } = req.query;
+    if (!token || typeof token !== "string") {
+      return res.status(400).json({
+        success: false,
+        message: "Verification token is required",
+      });
+    }
+
+    try {
+      await authService.verifyEmail(token);
+      return res.status(200).json({
+        success: true,
+        message: "Email verified successfully. You can now sign in.",
+      });
+    } catch (error: any) {
+      return res.status(400).json({
+        success: false,
+        message: error.message || "Email verification failed",
+      });
+    }
+  }
+
+  async resendVerification(req: Request, res: Response) {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        errors: errors.array(),
+      });
+    }
+
+    const { email } = req.body;
+    try {
+      const result = await authService.resendVerification(email);
+      return res.status(200).json({
+        success: true,
+        message: result.message,
+      });
+    } catch (error: any) {
+      return res.status(error.statusCode || 400).json({
+        success: false,
+        code: error.code || "RESEND_FAILED",
+        message: error.message,
+      });
+    }
+  }
+
+  async googleAuth(req: Request, res: Response) {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        errors: errors.array(),
+      });
+    }
+
+    const { credential } = req.body;
+    const ipKey = `ip:${req.ip}`;
+
+    try {
+      const { user, accessToken, refreshToken } = await authService.googleAuth(credential);
+
+      // Reset brute force trackers on success
+      await BruteForceService.recordSuccess(ipKey, "login");
+
+      // Store hashed refresh token for multi-device support
+      const hashedRefreshToken = await bcrypt.hash(refreshToken, 8);
+      await User.findByIdAndUpdate(user._id, {
+        $push: { refreshTokens: hashedRefreshToken },
+        $set: {
+          failedLoginAttempts: 0,
+          lockUntil: null,
+          lastLogin: new Date(),
+        },
+      });
+
+      res.cookie("champai_access_token", accessToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+        maxAge: 15 * 60 * 1000,
+      });
+
+      res.cookie("champai_refresh_token", refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      });
+
+      const userResponse: any = {
+        _id: String(user._id),
+        name: user.name,
+        email: user.email,
+        avatar: user.avatar,
+        provider: user.provider,
+        role: user.role,
+        subscription: user.subscription,
+        emailVerified: user.emailVerified,
+        isActive: user.isActive,
+        lastLogin: user.lastLogin,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+      };
+
+      auditService.log("LOGIN", String(user._id), { email: user.email, provider: "google" }, req.ip);
+
+      return res.status(200).json({
+        success: true,
+        message: "Google login successful",
+        accessToken,
+        refreshToken,
+        user: userResponse,
+      });
+    } catch (error: any) {
+      auditService.log("FAILED_LOGIN", undefined, { reason: "google_login_failed", error: error.message }, req.ip);
+      return res.status(error.statusCode || 400).json({
+        success: false,
+        code: error.code || "GOOGLE_AUTH_FAILED",
+        message: error.message,
       });
     }
   }

@@ -32,6 +32,8 @@ interface AuthState {
 
   register: (data: RegisterRequest) => Promise<void>;
 
+  googleLogin: (credential: string) => Promise<void>;
+
   logout: () => void;
 
   loadUser: () => Promise<void>;
@@ -138,7 +140,31 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   },
 
+  async googleLogin(credential: string) {
+    set({ isLoading: true });
 
+    try {
+      const response = await authService.googleAuth(credential);
+
+      localStorage.setItem(TOKEN_KEY, response.accessToken);
+
+      if (response.refreshToken) {
+        localStorage.setItem(REFRESH_TOKEN_KEY, response.refreshToken);
+      }
+
+      localStorage.setItem(USER_KEY, JSON.stringify(response.user));
+
+      set({
+        user: response.user,
+        token: response.accessToken,
+        isAuthenticated: true,
+        isLoading: false,
+      });
+    } catch (error) {
+      set({ isLoading: false });
+      throw error;
+    }
+  },
 
   logout() {
 

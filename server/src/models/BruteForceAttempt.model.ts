@@ -19,7 +19,7 @@ const BruteForceAttemptSchema = new Schema<IBruteForceAttempt>(
     action: {
       type: String,
       required: true,
-      enum: ["login", "register", "reset"],
+      enum: ["login", "register", "reset", "resend_email"],
     },
     count: {
       type: Number,

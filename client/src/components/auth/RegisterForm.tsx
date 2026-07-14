@@ -4,11 +4,11 @@ import { Input } from "../ui/Input";
 import Button from "../ui/Button";
 import { useAuthStore } from "../../stores/auth.store";
 import { useNavigate, Link } from "react-router-dom";
+import GoogleButton from "./GoogleButton";
 
 export default function RegisterForm() {
   const navigate = useNavigate();
   const register = useAuthStore((state) => state.register);
-  const login = useAuthStore((state) => state.login);
   const isLoading = useAuthStore((state) => state.isLoading);
 
   const [showPassword, setShowPassword] = useState(false);
@@ -59,13 +59,7 @@ export default function RegisterForm() {
         password,
       });
 
-      // Auto login after successful registration
-      await login({
-        email,
-        password,
-      });
-
-      navigate("/chat");
+      navigate("/verify-email-sent", { state: { email } });
     } catch (err: any) {
       const responseData = err.response?.data;
       let errMsg = "";
@@ -222,6 +216,18 @@ export default function RegisterForm() {
           "Sign Up"
         )}
       </Button>
+
+      {/* Divider */}
+      <div className="relative flex items-center py-2">
+        <div className="flex-grow border-t border-slate-200/20 dark:border-slate-800/40"></div>
+        <span className="flex-shrink mx-4 text-xs font-semibold tracking-wider text-slate-400 dark:text-slate-500 uppercase">
+          OR
+        </span>
+        <div className="flex-grow border-t border-slate-200/20 dark:border-slate-800/40"></div>
+      </div>
+
+      {/* Continue with Google Button */}
+      <GoogleButton onError={setError} />
 
       <div className="text-center text-sm text-slate-400 mt-4">
         Already have an account?{" "}

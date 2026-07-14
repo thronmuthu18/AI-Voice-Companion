@@ -5,10 +5,15 @@ export interface IUser extends Document {
   email: string;
   password?: string;
   avatar?: string;
-  provider: "local" | "google" | "github";
+  provider: "local" | "google" | "github" | "local_google";
   role: "user" | "admin";
   subscription: "free" | "pro";
   emailVerified: boolean;
+  emailVerificationTokenHash?: string | null;
+  emailVerificationExpiresAt?: Date | null;
+  googleId?: string | null;
+  emailVerificationResendCount?: number;
+  emailVerificationLastResendAt?: Date | null;
   isActive: boolean;
   lastLogin?: Date;
   // Brute-force protection
@@ -49,7 +54,7 @@ const UserSchema = new Schema<IUser>(
 
     provider: {
       type: String,
-      enum: ["local", "google", "github"],
+      enum: ["local", "google", "github", "local_google"],
       default: "local",
     },
 
@@ -68,6 +73,33 @@ const UserSchema = new Schema<IUser>(
     emailVerified: {
       type: Boolean,
       default: false,
+    },
+
+    emailVerificationTokenHash: {
+      type: String,
+      default: null,
+      select: false,
+    },
+
+    emailVerificationExpiresAt: {
+      type: Date,
+      default: null,
+    },
+
+    emailVerificationResendCount: {
+      type: Number,
+      default: 0,
+    },
+
+    emailVerificationLastResendAt: {
+      type: Date,
+      default: null,
+    },
+
+    googleId: {
+      type: String,
+      default: null,
+      index: { unique: true, sparse: true },
     },
 
     isActive: {

@@ -58,3 +58,17 @@ export const resetPasswordValidator = [
     .withMessage("A valid email address is required")
     .normalizeEmail(),
 ];
+
+export const resendVerificationValidator = [
+  body("email")
+    .isEmail()
+    .withMessage("A valid email address is required")
+    .normalizeEmail(),
+];
+
+export const googleAuthValidator = [
+  body("credential")
+    .trim()
+    .notEmpty()
+    .withMessage("Google ID token credential is required"),
+];

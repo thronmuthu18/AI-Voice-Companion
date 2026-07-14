@@ -80,3 +80,13 @@ export const burstLimiter = rateLimit({
   statusCode: 429,
   handler: limitHandler("burst_abuse", "Too many requests in a short window. Please slow down and try again."),
 });
+
+// Resend verification email rate limiter (5 requests per hour per IP)
+export const resendLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour window
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  statusCode: 429,
+  handler: limitHandler("resend_api", "Too many verification email requests from this IP. Please try again in an hour."),
+});

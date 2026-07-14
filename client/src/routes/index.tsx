@@ -2,6 +2,8 @@ import { Routes, Route, Navigate } from "react-router-dom";
 
 import Login from "../pages/Login";
 import Register from "../pages/Register";
+import VerifyEmailSent from "../pages/VerifyEmailSent";
+import VerifyEmail from "../pages/VerifyEmail";
 import Chat from "../pages/Chat";
 import Pinned from "../pages/Pinned";
 import Archived from "../pages/Archived";
@@ -29,6 +31,24 @@ export default function AppRoutes() {
         element={
           <PublicRoute>
             <Register />
+          </PublicRoute>
+        }
+      />
+
+      <Route
+        path="/verify-email-sent"
+        element={
+          <PublicRoute>
+            <VerifyEmailSent />
+          </PublicRoute>
+        }
+      />
+
+      <Route
+        path="/verify-email"
+        element={
+          <PublicRoute>
+            <VerifyEmail />
           </PublicRoute>
         }
       />

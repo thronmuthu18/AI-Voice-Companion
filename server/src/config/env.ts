@@ -53,6 +53,12 @@ const envSchema = z.object({
   ENABLE_PROVIDER_ROUTER: z.preprocess((val) => val === 'true' || val === true, z.boolean()).default(true),
 
   OPENAI_API_KEY: z.string().default(''),
+
+  // Email Verification & Google Auth Configs
+  RESEND_API_KEY: z.string().default(''),
+  EMAIL_FROM_ADDRESS: z.string().default('noreply@champai.app'),
+  EMAIL_FROM_NAME: z.string().default('Champ.ai'),
+  GOOGLE_CLIENT_ID: z.string().default(''),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -99,6 +105,16 @@ function loadEnv(): Env {
 
     if (!env.MONGO_URI || env.MONGO_URI === 'mongodb://localhost:27017/ai-os') {
       console.error('[Config] CRITICAL: A valid MONGO_URI is required in production.');
+      process.exit(1);
+    }
+
+    if (!env.RESEND_API_KEY) {
+      console.error('[Config] CRITICAL: RESEND_API_KEY is required in production.');
+      process.exit(1);
+    }
+
+    if (!env.GOOGLE_CLIENT_ID) {
+      console.error('[Config] CRITICAL: GOOGLE_CLIENT_ID is required in production.');
       process.exit(1);
     }
   }

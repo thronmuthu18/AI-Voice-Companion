@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { authController } from "../controllers/auth.controller";
-import { registerValidator, loginValidator, resetPasswordValidator } from "../validators/auth.validator";
-import { authLimiter } from "../middleware/rate-limit.middleware";
+import { registerValidator, loginValidator, resetPasswordValidator, resendVerificationValidator, googleAuthValidator } from "../validators/auth.validator";
+import { authLimiter, resendLimiter } from "../middleware/rate-limit.middleware";
 import { restrictBruteForce } from "../middleware/brute-force.middleware";
 import { authenticate } from "../middleware/auth.middleware";
 
@@ -23,6 +23,28 @@ router.post(
   restrictBruteForce("login"),
   loginValidator,
   authController.login
+);
+
+// Verify Email endpoint
+router.get(
+  "/verify-email",
+  authController.verifyEmail
+);
+
+// Resend Email verification endpoint (protected by resend rate limiting)
+router.post(
+  "/resend-verification",
+  resendLimiter,
+  resendVerificationValidator,
+  authController.resendVerification
+);
+
+// Google OAuth verification/authentication
+router.post(
+  "/google",
+  authLimiter,
+  googleAuthValidator,
+  authController.googleAuth
 );
 
 // Password Reset (protected by rate limit and brute-force block)

@@ -9,8 +9,17 @@ export interface User {
   name: string;
   email: string;
   subscription?: "free" | "pro";
+  emailVerified?: boolean;
+  provider?: string;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface RegisterResponse {
+  success: boolean;
+  message: string;
+  verificationEmailSent?: boolean;
+  user?: User;
 }
 
 export interface AuthResponse {
