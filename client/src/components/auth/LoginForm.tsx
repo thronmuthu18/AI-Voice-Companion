@@ -49,15 +49,32 @@ export default function LoginForm() {
       });
       navigate("/chat");
     } catch (err: any) {
-      console.error(err);
+      console.error("Login request failed:", err.message || "Failed Request");
       const responseData = err.response?.data;
-      
-      if (responseData?.code === "EMAIL_NOT_VERIFIED") {
-        setIsUnverified(true);
-        setError("Your email address has not been verified. Check your inbox and verify your email before signing in.");
-      } else {
-        setError(responseData?.message || "Invalid email or password");
+      let errMsg = "";
+
+      // 1. Check for validation array errors from express-validator
+      if (responseData?.errors && Array.isArray(responseData.errors) && responseData.errors.length > 0) {
+        errMsg = responseData.errors[0].msg || responseData.errors[0].message || "";
       }
+
+      // 2. Check for unverified email error code
+      if (!errMsg && responseData?.code === "EMAIL_NOT_VERIFIED") {
+        setIsUnverified(true);
+        errMsg = responseData.message || "Your email address has not been verified. Check your inbox and verify your email before signing in.";
+      }
+
+      // 3. Check for general message in response
+      if (!errMsg && responseData?.message) {
+        errMsg = responseData.message;
+      }
+
+      // 4. Default fallback
+      if (!errMsg) {
+        errMsg = "Invalid email or password.";
+      }
+
+      setError(errMsg);
     }
   };
 
