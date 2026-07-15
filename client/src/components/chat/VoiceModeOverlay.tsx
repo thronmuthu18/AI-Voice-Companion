@@ -32,8 +32,8 @@ type VoiceState =
   | "ERROR";
 
 // Helper to split text into complete sentences, avoiding breaking technical terms
-function extractSentences(text: string, isLast = false): string[] {
-  let sanitized = text
+function extractSentences(text: string, isLast = false, isTamil = false, textBufferRef?: React.MutableRefObject<string>): string[] {
+  const sanitized = text
     .replace(/Node\.js/gi, "Node_js_marker")
     .replace(/Express\.js/gi, "Express_js_marker")
     .replace(/React\.js/gi, "React_js_marker");
@@ -54,6 +54,23 @@ function extractSentences(text: string, isLast = false): string[] {
     // If it's the last part and we're not finishing the stream, wait for standard punctuation
     if (!isLast && i === parts.length - 1) {
       const endsWithPunct = /[.?!。！？\n]$/.test(part);
+      
+      // Tamil specific chunking optimization: if no punctuation but buffer gets long
+      if (!endsWithPunct && isTamil && part.length > 65) {
+        const words = part.split(/\s+/);
+        if (words.length > 3) {
+          const lastWord = words.pop() || "";
+          const completePhrase = words.join(" ");
+          sentences.push(completePhrase);
+          
+          // Re-update current text buffer with the trailing incomplete word
+          if (textBufferRef) {
+            textBufferRef.current = lastWord;
+          }
+          break;
+        }
+      }
+
       if (!endsWithPunct) {
         break;
       }
@@ -71,7 +88,7 @@ function cleanSentenceText(text: string): string {
     .replace(/[*_#~]/g, "")        // remove markdown tags
     .replace(/\[\d+\]/g, "")       // remove reference brackets e.g. [1]
     .replace(/\bhttps?:\/\/\S+/gi, "") // remove URLs
-    .replace(/[👇👉👋🤖🎨]/g, "")  // remove layout emojis
+    .replace(/[👇👉👋🤖🎨]/gu, "")  // remove layout emojis
     .replace(/\s+/g, " ")          // normalize spaces
     .trim();
 }
@@ -95,9 +112,14 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
   const [interimTranscript, setInterimTranscript] = useState("");
   
   const [isMuted, setIsMuted] = useState(false);
-  const [speechLang] = useState(() => {
-    return localStorage.getItem("champai_speech_lang") || "en-US";
+  
+  // Voice Language Preference settings: Auto, Tamil, English
+  const [voiceLang, setVoiceLang] = useState(() => {
+    return localStorage.getItem("champai_voice_lang") || "Auto";
   });
+  
+  // Device voice quality notice message state
+  const [voiceNotice, setVoiceNotice] = useState("");
 
   const recognitionRef = useRef<any>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -125,6 +147,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
   const chatRef = useRef<any>(currentChat);
   const finalTranscriptRef = useRef(finalTranscript);
   const interimTranscriptRef = useRef(interimTranscript);
+  const voiceLangRef = useRef(voiceLang);
 
   // Progressive assistant text state shown in Voice Modal during stream
   const [fullAssistantText, setFullAssistantText] = useState("");
@@ -149,6 +172,10 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     interimTranscriptRef.current = interimTranscript;
   }, [interimTranscript]);
 
+  useEffect(() => {
+    voiceLangRef.current = voiceLang;
+  }, [voiceLang]);
+
   // Telemetry logger
   const logTelemetry = (event: string, details?: any) => {
     const timestamp = new Date().toISOString();
@@ -171,7 +198,11 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     return () => {
       endVoiceSession();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
+
+  // Detect platform device layout
+  const isDesktop = !/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
 
   const startVoiceSession = async () => {
     setState("CONNECTING");
@@ -179,6 +210,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     setFinalTranscript("");
     setInterimTranscript("");
     setFullAssistantText("");
+    setVoiceNotice("");
 
     const SpeechRecognition =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -209,21 +241,34 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
       const rec = new SpeechRecognition();
       rec.continuous = true;
       rec.interimResults = true;
-      rec.lang = speechLang;
+
+      // Set target speech capture lang based on settings
+      let targetLang = "en-US";
+      if (voiceLangRef.current === "Tamil") {
+        targetLang = "ta-IN";
+      } else if (voiceLangRef.current === "English") {
+        targetLang = "en-US";
+      } else {
+        // Auto: defaults to user's last selected language or en-US
+        targetLang = localStorage.getItem("champai_speech_lang") || "en-US";
+      }
+
+      rec.lang = targetLang;
+      logTelemetry("recognition_language", { lang: targetLang });
+
+      // If user is speaking Tamil and Chrome isn't explicitly set to Tamil, prompt user
+      if (voiceLangRef.current === "Auto" && targetLang === "en-US") {
+        setVoiceNotice("தமிழில் பேசுகிறீர்களா? தமிழ் mode தேர்வு செய்தால் recognition accuracy மேம்படலாம்.");
+      }
 
       rec.onstart = () => {
         if (stateRef.current === "REQUESTING_MICROPHONE" || stateRef.current === "CONNECTING") {
           setState("LISTENING");
-          logTelemetry("speech_start_timestamp");
+          logTelemetry("speech_started");
         }
       };
 
       rec.onresult = (event: any) => {
-        // Ignore speech inputs if thinking or the AI is speaking (prevents echo loopback)
-        if (stateRef.current === "THINKING" || stateRef.current === "AI_SPEAKING" || stateRef.current === "PROCESSING_SPEECH" || isMutedRef.current) {
-          return;
-        }
-
         let accumulatedFinal = "";
         let currentInterim = "";
 
@@ -236,9 +281,28 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
           }
         }
 
-        logTelemetry("last_speech_result_timestamp", { accumulatedFinal, currentInterim });
+        // Automatic voice-triggered interruption (barge-in) ONLY on desktop browsers
+        if (stateRef.current === "AI_SPEAKING" && isDesktop && (currentInterim.trim().length > 3 || accumulatedFinal.trim().length > 3)) {
+          const currentSentence = activeUtteranceIndexRef.current >= 0 ? sentenceQueueRef.current[activeUtteranceIndexRef.current] || "" : "";
+          const userWords = (currentInterim || accumulatedFinal).toLowerCase().split(/\s+/);
+          const aiWords = currentSentence.toLowerCase().split(/\s+/);
+          
+          // Verify user words represent new intent rather than echo playback loopback
+          const isUniqueSpeech = userWords.some(word => word.length > 2 && !aiWords.includes(word));
+          if (isUniqueSpeech) {
+            handleInterrupt("CONFIRMED_USER_SPEECH");
+            return;
+          }
+        }
 
+        // Ignore standard speech inputs if thinking or AI is speaking
+        if (stateRef.current === "THINKING" || stateRef.current === "AI_SPEAKING" || stateRef.current === "PROCESSING_SPEECH" || isMutedRef.current) {
+          return;
+        }
+
+        logTelemetry("interim_tamil_transcript", { currentInterim });
         if (accumulatedFinal) {
+          logTelemetry("final_tamil_segment", { segment: accumulatedFinal });
           setFinalTranscript((prev) => prev + accumulatedFinal);
         }
         setInterimTranscript(currentInterim);
@@ -247,21 +311,31 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
         // Reset existing silence detection timer
         if (silenceTimeoutRef.current) {
           clearTimeout(silenceTimeoutRef.current);
+          logTelemetry("silence_timer_reset");
         }
 
-        // Adaptive end-of-turn detection
+        // Language-aware adaptive end-of-turn detection
         const combinedText = (finalTranscriptRef.current + accumulatedFinal + currentInterim).trim();
-        // Check if the current phrase ends in incomplete connectives or question structures
-        const isIncomplete = /\b(and|but|or|so|because|if|when|how|what|why|who|help|create|செய்|எப்படி|என்ன|ஏன்|ஆனா|மற்றும்)\s*$/i.test(combinedText);
-        const timeoutDelay = isIncomplete ? 2200 : 1400; // longer timeout for natural pauses / incomplete thoughts
+        const isTamilSpeech = rec.lang.startsWith("ta");
+        
+        let timeoutDelay = 1400; // English default
+        if (isTamilSpeech) {
+          // Check Tamil suffix connective check (Unicode safe)
+          const isTamilIncomplete = /(மற்றும்|ஆனால்|அப்புறம்|அதுக்கப்புறம்|அதனால்|எனக்கு|எப்படி|என்ன|எதுக்கு|ஏன்னா|பற்றி|வந்து|அப்படின்னா|அதாவது|இல்லாட்டி|இருந்தா|சொல்லி|சொல்லிட்டு|பண்ணி|பண்ணிட்டு|வேண்டும் என்று|என்று|ன்னு)\s*$/.test(combinedText);
+          timeoutDelay = isTamilIncomplete ? 3000 : 2200; // longer pause for Tamil natural pace
+        } else {
+          const isIncomplete = /\b(and|but|or|so|because|if|when|how|what|why|who|help|create)\s*$/i.test(combinedText);
+          timeoutDelay = isIncomplete ? 2200 : 1400;
+        }
 
         silenceTimeoutRef.current = setTimeout(() => {
           const finalSpeech = (finalTranscriptRef.current + interimTranscriptRef.current).trim();
           if (finalSpeech && (stateRef.current === "USER_SPEAKING" || stateRef.current === "LISTENING")) {
-            logTelemetry("end_of_turn_detected_timestamp", { text: finalSpeech });
+            logTelemetry("turn_submission_reason", { text: finalSpeech, reason: "SILENCE_TIMEOUT" });
             handleSubmitUserSpeech(finalSpeech);
           }
         }, timeoutDelay);
+        logTelemetry("silence_timer_started", { delay: timeoutDelay });
       };
 
       rec.onerror = (e: any) => {
@@ -273,10 +347,12 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
       };
 
       rec.onend = () => {
-        // Microphone auto-restarts ONLY when actively in LISTENING or USER_SPEAKING modes
-        // Never auto-start recognition while AI is speaking (prevents audio ducking/playback cancellation)
+        // Continuous restarts: keep recognition alive on desktop, or on mobile when NOT speaking
         const current = stateRef.current;
-        if (!isMutedRef.current && (current === "LISTENING" || current === "USER_SPEAKING")) {
+        const wantListening = current === "LISTENING" || current === "USER_SPEAKING";
+        const allowSpeechBargeIn = current === "AI_SPEAKING" && isDesktop;
+
+        if (!isMutedRef.current && (wantListening || allowSpeechBargeIn)) {
           try {
             recognitionRef.current?.start();
           } catch (err) {
@@ -314,7 +390,9 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     if (recognitionRef.current) {
       try {
         recognitionRef.current.stop();
-      } catch (e) {}
+      } catch (e) {
+        // already stopped
+      }
       recognitionRef.current = null;
     }
   };
@@ -336,10 +414,11 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     activeResponseIdRef.current = responseId;
 
     // Start timing telemetry
+    speechEndTimeRef.current = Date.now();
     requestStartTimeRef.current = Date.now();
     firstTokenTimeRef.current = 0;
     firstAudioTimeRef.current = 0;
-    logTelemetry("backend_request_timestamp", { responseId });
+    logTelemetry("submitted_tamil_transcript", { text: speechText, responseId });
 
     // Reset sentence queue parameters
     currentStreamTextRef.current = "";
@@ -352,14 +431,17 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     setFinalTranscript("");
     setInterimTranscript("");
     setFullAssistantText("");
+    setVoiceNotice("");
 
     setState("THINKING");
 
-    // Stop speech recognition immediately to prevent OS level audio ducking
-    if (recognitionRef.current) {
+    // Stop speech recognition immediately on mobile devices to prevent OS level audio ducking
+    if (!isDesktop && recognitionRef.current) {
       try {
         recognitionRef.current.stop();
-      } catch (e) {}
+      } catch (e) {
+        // already stopped
+      }
     }
 
     try {
@@ -374,7 +456,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
 
       // Stream response token-by-token directly using custom onToken callback
       await sendMessage(chatId, speechText, undefined, (token) => {
-        // Discard tokens if the user has interrupted or moved to a new turn
+        // Discard tokens if user has interrupted or moved to a new turn
         if (activeResponseIdRef.current !== responseId) return;
         handleStreamToken(token, responseId);
       });
@@ -385,7 +467,8 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
       logTelemetry("assistant_stream_completed", { responseId });
       
       // Flush out any remaining trailing text in stream buffer
-      const finalSentences = extractSentences(currentStreamTextRef.current, true);
+      const isTamil = recognitionRef.current?.lang?.startsWith("ta");
+      const finalSentences = extractSentences(currentStreamTextRef.current, true, isTamil, currentStreamTextRef);
       for (const sent of finalSentences) {
         if (!sentenceQueueRef.current.includes(sent)) {
           sentenceQueueRef.current.push(sent);
@@ -398,7 +481,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
 
     } catch (err: any) {
       console.error("Error generating voice response:", err);
-      // Discard errors if the user has interrupted or moved to a new turn
+      // Discard errors if user has interrupted or moved to a new turn
       if (activeResponseIdRef.current !== responseId) return;
 
       setState("ERROR");
@@ -422,7 +505,8 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     currentStreamTextRef.current += token;
 
     // Extract newly completed sentences from stream
-    const sentences = extractSentences(currentStreamTextRef.current, false);
+    const isTamil = recognitionRef.current?.lang?.startsWith("ta");
+    const sentences = extractSentences(currentStreamTextRef.current, false, isTamil, currentStreamTextRef);
     
     let added = false;
     for (const sent of sentences) {
@@ -481,6 +565,11 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
         v.lang.startsWith(utterance.lang.substring(0, 2))
     );
 
+    // If Tamil language is detected but no high-quality Tamil voice is installed on device
+    if (utterance.lang.startsWith("ta") && matchingVoices.length === 0) {
+      setVoiceNotice("இந்த device-ல் high-quality Tamil voice கிடைக்கவில்லை. Tamil pronunciation device-ஐ பொறுத்து மாறலாம்.");
+    }
+
     const bestVoice =
       matchingVoices.find((v) => v.name.toLowerCase().includes("google")) ||
       matchingVoices.find((v) => v.name.toLowerCase().includes("microsoft")) ||
@@ -489,6 +578,11 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
 
     if (bestVoice) {
       utterance.voice = bestVoice;
+    }
+
+    // Log voice inventory metadata to assist developers
+    if (bestVoice) {
+      console.log(`[Voice Inventory] Name: ${bestVoice.name}, Lang: ${bestVoice.lang}, Local: ${bestVoice.localService}, Default: ${bestVoice.default}`);
     }
 
     // Measure time to first audio output
@@ -545,7 +639,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     currentSpeechUtteranceRef.current = utterance;
 
     // Safety timeout: prevent synthesis locking on mobile
-    const estimatedDuration = cleanText.length * 150 + 5000; // 150ms per character + 5s buffer
+    const estimatedDuration = cleanText.length * 150 + 5000;
     if (aiSpeakingSafetyTimeoutRef.current) clearTimeout(aiSpeakingSafetyTimeoutRef.current);
     aiSpeakingSafetyTimeoutRef.current = setTimeout(() => {
       if (stateRef.current === "AI_SPEAKING" && activeUtteranceIndexRef.current === nextIndex && activeResponseIdRef.current === responseId) {
@@ -562,7 +656,6 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
 
     if (isStreamFinishedRef.current && activeUtteranceIndexRef.current >= sentenceQueueRef.current.length - 1) {
       if (!currentSpeechUtteranceRef.current) {
-        logTelemetry("assistant_character_count", { length: currentStreamTextRef.current.length });
         resumeListening();
       }
     }
@@ -610,6 +703,18 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     }
   };
 
+  const handleLanguageChange = (lang: string) => {
+    setVoiceLang(lang);
+    localStorage.setItem("champai_voice_lang", lang);
+    logTelemetry("language_changed", { language: lang });
+
+    // Restart session using new voice settings
+    endVoiceSession();
+    setTimeout(() => {
+      startVoiceSession();
+    }, 250);
+  };
+
   const toggleMute = () => {
     const nextMuted = !isMuted;
     setIsMuted(nextMuted);
@@ -619,14 +724,18 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
       if (recognitionRef.current) {
         try {
           recognitionRef.current.stop();
-        } catch (e) {}
+        } catch (e) {
+          // already stopped
+        }
       }
     } else {
       setState("LISTENING");
       if (recognitionRef.current) {
         try {
           recognitionRef.current.start();
-        } catch (e) {}
+        } catch (e) {
+          // already started
+        }
       }
     }
   };
@@ -639,7 +748,9 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
       case "REQUESTING_MICROPHONE":
         return "Requesting microphone access...";
       case "LISTENING":
-        return speechLang === "ta-IN" ? "Listening in Tamil..." : "Listening in English...";
+        return voiceLang === "Tamil" || (voiceLang === "Auto" && localStorage.getItem("champai_speech_lang") === "ta-IN")
+          ? "Listening in Tamil..."
+          : "Listening in English...";
       case "USER_SPEAKING":
         return "Listening...";
       case "THINKING":
@@ -701,13 +812,29 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
               <span className="text-sm font-black tracking-widest uppercase">Champ.ai Voice</span>
             </div>
 
-            <button
-              onClick={onClose}
-              className="rounded-full p-2 text-slate-400 hover:bg-slate-900 hover:text-white transition"
-              title="Close Voice Mode"
-            >
-              <X size={20} />
-            </button>
+            {/* Language Selector Dropdown */}
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 bg-slate-900/50 border border-slate-800 rounded-xl px-2.5 py-1">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Lang:</span>
+                <select
+                  value={voiceLang}
+                  onChange={(e) => handleLanguageChange(e.target.value)}
+                  className="bg-transparent text-xs text-blue-400 font-bold outline-none cursor-pointer"
+                >
+                  <option value="Auto" className="bg-slate-950 text-white">Auto</option>
+                  <option value="Tamil" className="bg-slate-950 text-white">தமிழ்</option>
+                  <option value="English" className="bg-slate-950 text-white">English</option>
+                </select>
+              </div>
+
+              <button
+                onClick={onClose}
+                className="rounded-full p-2 text-slate-400 hover:bg-slate-900 hover:text-white transition"
+                title="Close Voice Mode"
+              >
+                <X size={20} />
+              </button>
+            </div>
           </div>
 
           {/* Core Content Layout */}
@@ -754,10 +881,18 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
               </p>
 
               {/* Live Preview text */}
-              <p className="mt-3 text-sm text-slate-450 font-medium italic min-h-[20px] px-4 truncate max-w-full">
+              <p className="mt-3 text-sm text-slate-400 font-medium italic min-h-[20px] px-4 truncate max-w-full">
                 {interimTranscript || (state === "LISTENING" ? "champ, suggest a movie..." : "")}
               </p>
             </div>
+
+            {/* Non-blocking Device Voice Notice Banner */}
+            {voiceNotice && (
+              <div className="rounded-2xl border border-blue-900/30 bg-blue-950/10 p-3 max-w-md w-full flex items-start gap-2.5">
+                <Sparkles className="text-blue-400 shrink-0 mt-0.5" size={16} />
+                <p className="text-xs text-slate-400 leading-relaxed text-left">{voiceNotice}</p>
+              </div>
+            )}
 
             {/* Safe feedback alert banner */}
             {state === "ERROR" && errorMessage && (
