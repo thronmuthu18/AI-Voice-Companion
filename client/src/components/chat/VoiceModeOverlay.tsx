@@ -140,6 +140,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
   const spokenSentenceIndicesRef = useRef<Set<number>>(new Set());
   const activeUtteranceIndexRef = useRef<number>(-1);
   const isStreamFinishedRef = useRef<boolean>(false);
+  const recognitionSessionIdRef = useRef<string>("");
 
   // Keep refs of values needed in async callbacks to prevent closures on stale state
   const stateRef = useRef<VoiceState>(state);
@@ -206,6 +207,9 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
 
   const startVoiceSession = async () => {
     setState("CONNECTING");
+    const sessionId = crypto.randomUUID();
+    recognitionSessionIdRef.current = sessionId;
+    logTelemetry("recognition_session_id", { sessionId });
     setErrorMessage("");
     setFinalTranscript("");
     setInterimTranscript("");
@@ -262,6 +266,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
       }
 
       rec.onstart = () => {
+        logTelemetry("recognition_started", { sessionId: recognitionSessionIdRef.current });
         if (stateRef.current === "REQUESTING_MICROPHONE" || stateRef.current === "CONNECTING") {
           setState("LISTENING");
           logTelemetry("speech_started");
@@ -300,9 +305,11 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
           return;
         }
 
+        logTelemetry("last_tamil_result_timestamp", { timestamp: Date.now() });
         logTelemetry("interim_tamil_transcript", { currentInterim });
         if (accumulatedFinal) {
           logTelemetry("final_tamil_segment", { segment: accumulatedFinal });
+          logTelemetry("accumulated_tamil_transcript", { transcript: finalTranscriptRef.current + accumulatedFinal });
           setFinalTranscript((prev) => prev + accumulatedFinal);
         }
         setInterimTranscript(currentInterim);
