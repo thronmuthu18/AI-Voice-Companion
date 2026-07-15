@@ -5,6 +5,7 @@ import ChatMessages, {
 } from "../components/chat/ChatMessages";
 import EmptyState from "../components/chat/EmptyState";
 import ChatComposer from "../components/chat/ChatComposer";
+import VoiceModeOverlay from "../components/chat/VoiceModeOverlay";
 import { useChatStore } from "../stores/chat.store";
 import { useMessageStore } from "../stores/message.store";
 import { Upload } from "lucide-react";
@@ -14,6 +15,7 @@ export default function Chat() {
   const { messages, isLoading, sendMessage, fetchMessages } = useMessageStore();
 
   const [isDragging, setIsDragging] = useState(false);
+  const [isVoiceOpen, setIsVoiceOpen] = useState(false);
   const [droppedFiles, setDroppedFiles] = useState<{
     files: File[];
     timestamp: number;
@@ -131,6 +133,7 @@ export default function Chat() {
                 onSend={handleSend}
                 isLoading={isLoading}
                 droppedFiles={droppedFiles}
+                onStartVoiceMode={() => setIsVoiceOpen(true)}
               />
             </div>
           </div>
@@ -141,9 +144,16 @@ export default function Chat() {
               onSend={handleSend}
               isLoading={isLoading}
               droppedFiles={droppedFiles}
+              onStartVoiceMode={() => setIsVoiceOpen(true)}
             />
           </>
         )}
+
+        {/* Real-time Voice Conversation Overlay */}
+        <VoiceModeOverlay
+          isOpen={isVoiceOpen}
+          onClose={() => setIsVoiceOpen(false)}
+        />
       </div>
     </AppShell>
   );

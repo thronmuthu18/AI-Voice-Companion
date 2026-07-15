@@ -7,6 +7,7 @@ import {
   FileText,
   AlertCircle,
   RotateCcw,
+  Headphones,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { Attachment } from "../../types/api.types";
@@ -19,6 +20,7 @@ interface ChatComposerProps {
   isLoading?: boolean;
   onSend: (message: string, attachments?: Attachment[]) => void;
   droppedFiles?: { files: File[]; timestamp: number } | null;
+  onStartVoiceMode?: () => void;
 }
 
 interface UploadingFile {
@@ -34,6 +36,7 @@ export default function ChatComposer({
   isLoading = false,
   onSend,
   droppedFiles = null,
+  onStartVoiceMode,
 }: ChatComposerProps) {
   const [message, setMessage] = useState("");
   const [isListening, setIsListening] = useState(false);
@@ -493,6 +496,18 @@ export default function ChatComposer({
           >
             {isListening ? <AiPresence state="listening" size={20} /> : <Mic size={20} />}
           </button>
+
+          {onStartVoiceMode && (
+            <button
+              type="button"
+              onClick={onStartVoiceMode}
+              disabled={disabled || isLoading || isUploadingAny}
+              className="rounded-xl p-2 text-slate-450 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-white transition duration-200 hover:scale-105 active:scale-95 flex items-center justify-center"
+              title="Start Real-time Voice Conversation"
+            >
+              <Headphones size={20} />
+            </button>
+          )}
 
           <button
             type="button"
