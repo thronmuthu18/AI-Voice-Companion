@@ -31,6 +31,51 @@ type VoiceState =
   | "MUTED"
   | "ERROR";
 
+// Helper to split text into complete sentences, avoiding breaking technical terms
+function extractSentences(text: string, isLast = false): string[] {
+  let sanitized = text
+    .replace(/Node\.js/gi, "Node_js_marker")
+    .replace(/Express\.js/gi, "Express_js_marker")
+    .replace(/React\.js/gi, "React_js_marker");
+
+  // Split on standard punctuation followed by whitespace
+  const parts = sanitized.split(/(?<=[.?!。！？\n])\s+/);
+
+  const sentences: string[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    let part = parts[i].trim();
+    if (!part) continue;
+
+    part = part
+      .replace(/Node_js_marker/g, "Node.js")
+      .replace(/Express_js_marker/g, "Express.js")
+      .replace(/React_js_marker/g, "React.js");
+
+    // If it's the last part and we're not finishing the stream, wait for standard punctuation
+    if (!isLast && i === parts.length - 1) {
+      const endsWithPunct = /[.?!。！？\n]$/.test(part);
+      if (!endsWithPunct) {
+        break;
+      }
+    }
+    sentences.push(part);
+  }
+  return sentences;
+}
+
+// Clean formatting tags, markdown symbols, emoji names, URLs for natural pronunciation
+function cleanSentenceText(text: string): string {
+  return text
+    .replace(/```[\s\S]*?```/g, "") // remove code blocks
+    .replace(/`[^`]*`/g, "")       // remove inline code
+    .replace(/[*_#~]/g, "")        // remove markdown tags
+    .replace(/\[\d+\]/g, "")       // remove reference brackets e.g. [1]
+    .replace(/\bhttps?:\/\/\S+/gi, "") // remove URLs
+    .replace(/[👇👉👋🤖🎨]/g, "")  // remove layout emojis
+    .replace(/\s+/g, " ")          // normalize spaces
+    .trim();
+}
+
 export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayProps) {
   const { currentChat, createChat, fetchChats } = useChatStore();
   const { messages, sendMessage } = useMessageStore();
@@ -48,6 +93,20 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
   const silenceTimeoutRef = useRef<any>(null);
   const aiSpeakingSafetyTimeoutRef = useRef<any>(null);
   const currentSpeechUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+
+  // Latency metrics tracking
+  const speechEndTimeRef = useRef<number>(0);
+  const requestStartTimeRef = useRef<number>(0);
+  const firstTokenTimeRef = useRef<number>(0);
+  const firstAudioTimeRef = useRef<number>(0);
+
+  // Playback queue & unique chunk IDs tracking
+  const currentStreamTextRef = useRef<string>("");
+  const sentenceQueueRef = useRef<string[]>([]);
+  const spokenSentenceIndicesRef = useRef<Set<number>>(new Set());
+  const activeUtteranceIndexRef = useRef<number>(-1);
+  const isStreamFinishedRef = useRef<boolean>(false);
 
   // Keep refs of values needed in async callbacks to prevent closures on stale state
   const stateRef = useRef<VoiceState>(state);
@@ -109,6 +168,9 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
 
       localStreamRef.current = stream;
 
+      // Start volume-based audio analyzer for automatic user-voice barge-in detection
+      startVolumeAnalyzer(stream);
+
       // Initialize speech recognition
       const rec = new SpeechRecognition();
       rec.continuous = true;
@@ -122,11 +184,6 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
       };
 
       rec.onresult = (event: any) => {
-        // Ignore speech inputs if muted or the AI is speaking/thinking
-        if (isMutedRef.current || stateRef.current === "THINKING" || stateRef.current === "AI_SPEAKING" || stateRef.current === "PROCESSING_SPEECH") {
-          return;
-        }
-
         let finalPart = "";
         let interimPart = "";
 
@@ -137,6 +194,27 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
           } else {
             interimPart += result[0].transcript;
           }
+        }
+
+        // Automatic voice-triggered interruption (barge-in)
+        if (stateRef.current === "AI_SPEAKING" && (interimPart.trim().length > 3 || finalPart.trim().length > 3)) {
+          // Verify that this isn't just the AI's own words being echoed back
+          const currentSentence = activeUtteranceIndexRef.current >= 0 ? sentenceQueueRef.current[activeUtteranceIndexRef.current] || "" : "";
+          const userWords = (interimPart || finalPart).toLowerCase().split(/\s+/);
+          const aiWords = currentSentence.toLowerCase().split(/\s+/);
+          
+          // If the user says something that doesn't completely overlap with the spoken AI sentence, trigger interruption
+          const isUniqueSpeech = userWords.some(word => word.length > 2 && !aiWords.includes(word));
+          if (isUniqueSpeech) {
+            console.log(`[Barge-In] Recognized user voice activity: "${interimPart || finalPart}". Interrupting.`);
+            handleInterrupt();
+            return;
+          }
+        }
+
+        // Ignore standard speech inputs if thinking/processing
+        if (isMutedRef.current || stateRef.current === "THINKING" || stateRef.current === "AI_SPEAKING" || stateRef.current === "PROCESSING_SPEECH") {
+          return;
         }
 
         if (interimPart) {
@@ -170,13 +248,13 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
       };
 
       rec.onend = () => {
-        // If we ended listening but still want to be in listing state (no thinking/AI active), restart
+        // Keep microphone recognition alive during LISTENING/USER_SPEAKING or AI_SPEAKING (for barge-in)
         const current = stateRef.current;
-        if (!isMutedRef.current && (current === "LISTENING" || current === "USER_SPEAKING")) {
+        if (!isMutedRef.current && (current === "LISTENING" || current === "USER_SPEAKING" || current === "AI_SPEAKING")) {
           try {
             recognitionRef.current?.start();
           } catch (err) {
-            // SpeechRecognition is already running or error
+            // SpeechRecognition is already running
           }
         }
       };
@@ -187,6 +265,47 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
       console.error("Microphone capture failed:", err);
       setState("ERROR");
       setErrorMessage("Microphone permission denied. Access is required for Voice Mode.");
+    }
+  };
+
+  const startVolumeAnalyzer = (stream: MediaStream) => {
+    try {
+      const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextClass) return;
+      const ctx = new AudioContextClass();
+      audioCtxRef.current = ctx;
+
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      
+      const checkVolume = () => {
+        if (!localStreamRef.current) return; // session ended
+
+        if (stateRef.current === "AI_SPEAKING") {
+          analyser.getByteFrequencyData(dataArray);
+          let sum = 0;
+          for (let i = 0; i < dataArray.length; i++) {
+            sum += dataArray[i];
+          }
+          const averageVolume = sum / dataArray.length;
+          
+          // An average volume above 35 indicates active voice input over the audio playback
+          if (averageVolume > 35) {
+            console.log(`[Barge-In] Decibel volume exceeded threshold (${averageVolume.toFixed(1)}). Interrupting.`);
+            handleInterrupt();
+          }
+        }
+        
+        requestAnimationFrame(checkVolume);
+      };
+      
+      checkVolume();
+    } catch (err) {
+      console.warn("Failed to initialize barge-in audio volume analyzer:", err);
     }
   };
 
@@ -214,6 +333,14 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
       } catch (e) {}
       recognitionRef.current = null;
     }
+
+    // Stop audio context
+    if (audioCtxRef.current) {
+      try {
+        audioCtxRef.current.close();
+      } catch (e) {}
+      audioCtxRef.current = null;
+    }
   };
 
   const handleSubmitUserSpeech = async (speechText: string) => {
@@ -222,16 +349,22 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
       return;
     }
 
+    // Start latency timer
+    speechEndTimeRef.current = Date.now();
+    requestStartTimeRef.current = Date.now();
+    firstTokenTimeRef.current = 0;
+    firstAudioTimeRef.current = 0;
+
+    // Reset sentence queue parameters
+    currentStreamTextRef.current = "";
+    sentenceQueueRef.current = [];
+    spokenSentenceIndicesRef.current.clear();
+    activeUtteranceIndexRef.current = -1;
+    isStreamFinishedRef.current = false;
+
     // 1. Transition state to Thinking
     setState("THINKING");
     setInterimTranscript("");
-
-    // Temporarily pause speech recognition while AI thinks and speaks
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch (e) {}
-    }
 
     try {
       let chatId = chatRef.current?._id;
@@ -243,19 +376,24 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
         await fetchChats();
       }
 
-      // Send speech message to AI
-      await sendMessage(chatId, speechText);
+      // Stream response token-by-token
+      await sendMessage(chatId, speechText, undefined, (token) => {
+        handleStreamToken(token);
+      });
 
-      // Check for the AI's final text in the message store
-      const currentMessages = useMessageStore.getState().messages;
-      const lastMessage = currentMessages[currentMessages.length - 1];
-
-      if (lastMessage && lastMessage.role === "assistant") {
-        handleSpeakResponse(lastMessage.content);
-      } else {
-        // Fallback if no message found
-        resumeListening();
+      isStreamFinishedRef.current = true;
+      
+      // Flush out any remaining trailing text in buffer
+      const finalSentences = extractSentences(currentStreamTextRef.current, true);
+      for (const sent of finalSentences) {
+        if (!sentenceQueueRef.current.includes(sent)) {
+          sentenceQueueRef.current.push(sent);
+        }
       }
+
+      // Check if queue has finished playing
+      checkQueueFinished();
+
     } catch (err: any) {
       console.error("Error generating voice response:", err);
       setState("ERROR");
@@ -267,21 +405,58 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     }
   };
 
-  const handleSpeakResponse = (responseText: string) => {
-    setState("AI_SPEAKING");
+  const handleStreamToken = (token: string) => {
+    // Record time to first token
+    if (firstTokenTimeRef.current === 0) {
+      firstTokenTimeRef.current = Date.now();
+    }
 
-    // Clean text of formatting tokens like markdown, asterisks, brackets which sound robotic
-    const cleanText = responseText
-      .replace(/[\*\_\`\#]/g, "") // remove bold/italic/code markdowns
-      .replace(/\[.*?\]/g, "")   // remove reference link brackets
-      .trim();
+    currentStreamTextRef.current += token;
 
-    if (!cleanText) {
-      resumeListening();
+    // Extract newly completed sentences from stream
+    const sentences = extractSentences(currentStreamTextRef.current, false);
+    
+    let added = false;
+    for (const sent of sentences) {
+      if (!sentenceQueueRef.current.includes(sent)) {
+        sentenceQueueRef.current.push(sent);
+        added = true;
+      }
+    }
+
+    if (added) {
+      playNextSentenceInQueue();
+    }
+  };
+
+  const playNextSentenceInQueue = () => {
+    // If currently speaking, wait for active sentence onend trigger
+    if (stateRef.current === "AI_SPEAKING" && currentSpeechUtteranceRef.current) {
       return;
     }
 
-    window.speechSynthesis.cancel();
+    // Find the next index to play
+    const nextIndex = activeUtteranceIndexRef.current + 1;
+    
+    // Check if next sentence exists in queue
+    if (nextIndex >= sentenceQueueRef.current.length) {
+      checkQueueFinished();
+      return;
+    }
+
+    const nextSentence = sentenceQueueRef.current[nextIndex];
+    activeUtteranceIndexRef.current = nextIndex;
+
+    const cleanText = cleanSentenceText(nextSentence);
+    if (!cleanText) {
+      // Discard empty chunk and go next
+      spokenSentenceIndicesRef.current.add(nextIndex);
+      playNextSentenceInQueue();
+      return;
+    }
+
+    // Mark active state
+    setState("AI_SPEAKING");
 
     const utterance = new SpeechSynthesisUtterance(cleanText);
     const isTamil = /[\u0B80-\u0BFF]/.test(cleanText);
@@ -304,34 +479,70 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
       utterance.voice = bestVoice;
     }
 
+    // Measure time to first audio output
+    utterance.onstart = () => {
+      if (firstAudioTimeRef.current === 0) {
+        firstAudioTimeRef.current = Date.now();
+        
+        // Calculate latency metrics
+        const speechEndToRequest = requestStartTimeRef.current - speechEndTimeRef.current;
+        const requestToFirstToken = firstTokenTimeRef.current - requestStartTimeRef.current;
+        const firstTokenToFirstAudio = firstAudioTimeRef.current - firstTokenTimeRef.current;
+        const totalLatency = firstAudioTimeRef.current - speechEndTimeRef.current;
+
+        console.log(
+          `%c[Voice Mode Latency Report]\n` +
+          `  - speech_end_to_request_ms: ${speechEndToRequest}ms\n` +
+          `  - request_to_first_token_ms: ${requestToFirstToken}ms\n` +
+          `  - first_token_to_first_audio_ms: ${firstTokenToFirstAudio}ms\n` +
+          `  - total_voice_response_latency_ms: ${totalLatency}ms`,
+          "color: #3b82f6; font-weight: bold; font-size: 11px;"
+        );
+      }
+    };
+
     utterance.onend = () => {
+      spokenSentenceIndicesRef.current.add(nextIndex);
       currentSpeechUtteranceRef.current = null;
       if (aiSpeakingSafetyTimeoutRef.current) clearTimeout(aiSpeakingSafetyTimeoutRef.current);
-      resumeListening();
+      
+      // Play next sentence chunk
+      playNextSentenceInQueue();
     };
 
     utterance.onerror = (e) => {
-      console.warn("TTS playback warning/error:", e);
+      console.warn("Utterance playback error:", e);
+      spokenSentenceIndicesRef.current.add(nextIndex);
       currentSpeechUtteranceRef.current = null;
       if (aiSpeakingSafetyTimeoutRef.current) clearTimeout(aiSpeakingSafetyTimeoutRef.current);
-      resumeListening();
+      
+      // Proceed next
+      playNextSentenceInQueue();
     };
 
     currentSpeechUtteranceRef.current = utterance;
 
-    // Safety timeout: prevent synthesis hanging on mobile devices
-    const estimatedDuration = cleanText.length * 120 + 3500; // 120ms per character + 3.5s cushion
+    // Safety timeout: prevent synthesis locking
+    const estimatedDuration = cleanText.length * 120 + 3500;
     if (aiSpeakingSafetyTimeoutRef.current) clearTimeout(aiSpeakingSafetyTimeoutRef.current);
     aiSpeakingSafetyTimeoutRef.current = setTimeout(() => {
-      if (stateRef.current === "AI_SPEAKING") {
-        console.warn("TTS safety timeout fired: resetting to listening state.");
+      if (stateRef.current === "AI_SPEAKING" && activeUtteranceIndexRef.current === nextIndex) {
+        console.warn("TTS safety timeout triggered: skipping chunk.");
         window.speechSynthesis.cancel();
         currentSpeechUtteranceRef.current = null;
-        resumeListening();
+        playNextSentenceInQueue();
       }
     }, estimatedDuration);
 
     window.speechSynthesis.speak(utterance);
+  };
+
+  const checkQueueFinished = () => {
+    if (isStreamFinishedRef.current && activeUtteranceIndexRef.current >= sentenceQueueRef.current.length - 1) {
+      if (!currentSpeechUtteranceRef.current) {
+        resumeListening();
+      }
+    }
   };
 
   const resumeListening = () => {
@@ -355,11 +566,19 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
 
   // Safe barge-in interruption logic
   const handleInterrupt = () => {
-    if (state === "AI_SPEAKING") {
+    if (stateRef.current === "AI_SPEAKING" || stateRef.current === "THINKING") {
       setState("INTERRUPTED");
+      
+      // Stop speech synthesis immediately
       window.speechSynthesis.cancel();
       currentSpeechUtteranceRef.current = null;
+      
       if (aiSpeakingSafetyTimeoutRef.current) clearTimeout(aiSpeakingSafetyTimeoutRef.current);
+
+      // Flush queue
+      sentenceQueueRef.current = [];
+      activeUtteranceIndexRef.current = -1;
+      
       resumeListening();
     }
   };
@@ -423,7 +642,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
       case "PROCESSING_SPEECH":
         return "thinking";
       case "AI_SPEAKING":
-        return "streaming"; // streams pulses
+        return "streaming";
       case "ERROR":
         return "error";
       default:

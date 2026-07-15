@@ -12,7 +12,8 @@ interface MessageState {
   sendMessage: (
     chatId: string,
     content: string,
-    attachments?: Attachment[]
+    attachments?: Attachment[],
+    onToken?: (token: string) => void
   ) => Promise<void>;
   clearMessages: () => void;
 }
@@ -37,7 +38,7 @@ export const useMessageStore = create<MessageState>((set) => ({
     }
   },
 
-  async sendMessage(chatId, content, attachments) {
+  async sendMessage(chatId, content, attachments, onToken) {
     const assistantMsgId = crypto.randomUUID();
     set({ isLoading: true });
 
@@ -81,6 +82,9 @@ export const useMessageStore = create<MessageState>((set) => ({
                 : m
             ),
           }));
+          if (onToken) {
+            onToken(token);
+          }
         },
         async () => {
           // Stream completed - fetch latest database state to synchronize MongoDB _ids and times
