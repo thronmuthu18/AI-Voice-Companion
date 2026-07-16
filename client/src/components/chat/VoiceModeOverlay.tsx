@@ -42,6 +42,8 @@ function extractSentences(text: string, isLast = false, isTamil = false, textBuf
   const parts = sanitized.split(/(?<=[.?!。！？\n])\s+/);
 
   const sentences: string[] = [];
+  let buffer = "";
+
   for (let i = 0; i < parts.length; i++) {
     let part = parts[i].trim();
     if (!part) continue;
@@ -61,7 +63,9 @@ function extractSentences(text: string, isLast = false, isTamil = false, textBuf
         if (words.length > 3) {
           const lastWord = words.pop() || "";
           const completePhrase = words.join(" ");
-          sentences.push(completePhrase);
+          const phraseToPush = buffer ? buffer + " " + completePhrase : completePhrase;
+          sentences.push(phraseToPush);
+          buffer = "";
           
           // Re-update current text buffer with the trailing incomplete word
           if (textBufferRef) {
@@ -72,11 +76,36 @@ function extractSentences(text: string, isLast = false, isTamil = false, textBuf
       }
 
       if (!endsWithPunct) {
-        break;
+        // Accumulate trailing incomplete part in buffer ref
+        if (textBufferRef) {
+          textBufferRef.current = (buffer ? buffer + " " : "") + part;
+        }
+        return sentences;
       }
     }
-    sentences.push(part);
+
+    // Avoid tiny chunks: accumulate short segments
+    if (buffer) {
+      part = buffer + " " + part;
+      buffer = "";
+    }
+
+    if (!isLast && part.length < 15 && i < parts.length - 1) {
+      buffer = part;
+    } else {
+      sentences.push(part);
+    }
   }
+
+  // Handle leftover buffer at the end of stream
+  if (buffer) {
+    if (isLast) {
+      sentences.push(buffer);
+    } else if (textBufferRef) {
+      textBufferRef.current = buffer;
+    }
+  }
+
   return sentences;
 }
 
@@ -266,6 +295,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
       }
 
       rec.onstart = () => {
+        logTelemetry("Recognition started");
         logTelemetry("recognition_started", { sessionId: recognitionSessionIdRef.current });
         if (stateRef.current === "REQUESTING_MICROPHONE" || stateRef.current === "CONNECTING") {
           setState("LISTENING");
@@ -307,10 +337,13 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
 
         logTelemetry("last_tamil_result_timestamp", { timestamp: Date.now() });
         logTelemetry("interim_tamil_transcript", { currentInterim });
+        let currentFinalText = finalTranscriptRef.current;
         if (accumulatedFinal) {
           logTelemetry("final_tamil_segment", { segment: accumulatedFinal });
-          logTelemetry("accumulated_tamil_transcript", { transcript: finalTranscriptRef.current + accumulatedFinal });
-          setFinalTranscript((prev) => prev + accumulatedFinal);
+          currentFinalText += accumulatedFinal;
+          finalTranscriptRef.current = currentFinalText;
+          setFinalTranscript(currentFinalText);
+          logTelemetry("accumulated_tamil_transcript", { transcript: currentFinalText });
         }
         setInterimTranscript(currentInterim);
         setState("USER_SPEAKING");
@@ -321,8 +354,14 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
           logTelemetry("silence_timer_reset");
         }
 
+        // Never submit during active speech: wait until interim transcript stabilizes (becomes empty)
+        if (currentInterim.trim().length > 0) {
+          logTelemetry("waiting_for_stable_transcript", { currentInterim });
+          return;
+        }
+
         // Language-aware adaptive end-of-turn detection
-        const combinedText = (finalTranscriptRef.current + accumulatedFinal + currentInterim).trim();
+        const combinedText = (currentFinalText + currentInterim).trim();
         const isTamilSpeech = rec.lang.startsWith("ta");
         
         let timeoutDelay = 1400; // English default
@@ -354,6 +393,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
       };
 
       rec.onend = () => {
+        logTelemetry("Recognition stopped");
         // Continuous restarts: keep recognition alive on desktop, or on mobile when NOT speaking
         const current = stateRef.current;
         const wantListening = current === "LISTENING" || current === "USER_SPEAKING";
@@ -415,6 +455,18 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
       setState("LISTENING");
       return;
     }
+
+    logTelemetry("Transcript finalized", { text: speechText });
+
+    // Auto language strategy: save language preference dynamically based on input content
+    const isTamilInput = /[\u0B80-\u0BFF]/.test(speechText);
+    if (isTamilInput) {
+      localStorage.setItem("champai_speech_lang", "ta-IN");
+    } else {
+      localStorage.setItem("champai_speech_lang", "en-US");
+    }
+
+    logTelemetry("Gemini request", { text: speechText });
 
     // Allocate a unique response ID for this conversation turn
     const responseId = crypto.randomUUID();
@@ -504,6 +556,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     // Record time to first token
     if (firstTokenTimeRef.current === 0) {
       firstTokenTimeRef.current = Date.now();
+      logTelemetry("First response token");
       logTelemetry("first_ai_token_timestamp", { latencyMs: firstTokenTimeRef.current - requestStartTimeRef.current });
     }
 
@@ -551,7 +604,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     const nextSentence = sentenceQueueRef.current[nextIndex];
     activeUtteranceIndexRef.current = nextIndex;
 
-    const cleanText = cleanSentenceText(nextSentence);
+    const cleanText = cleanSentenceText(nextSentence).normalize("NFC");
     if (!cleanText) {
       // Discard empty chunk and go next
       spokenSentenceIndicesRef.current.add(nextIndex);
@@ -572,17 +625,32 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
         v.lang.startsWith(utterance.lang.substring(0, 2))
     );
 
+    // Prioritize high-quality voices (Google, Microsoft, natural/premium)
+    const sortedMatchingVoices = [...matchingVoices].sort((a, b) => {
+      const aGoogle = a.name.toLowerCase().includes("google");
+      const bGoogle = b.name.toLowerCase().includes("google");
+      if (aGoogle && !bGoogle) return -1;
+      if (!aGoogle && bGoogle) return 1;
+
+      const aMs = a.name.toLowerCase().includes("microsoft");
+      const bMs = b.name.toLowerCase().includes("microsoft");
+      if (aMs && !bMs) return -1;
+      if (!aMs && bMs) return 1;
+
+      const aNatural = a.name.toLowerCase().includes("natural");
+      const bNatural = b.name.toLowerCase().includes("natural");
+      if (aNatural && !bNatural) return -1;
+      if (!aNatural && bNatural) return 1;
+
+      return 0;
+    });
+
     // If Tamil language is detected but no high-quality Tamil voice is installed on device
-    if (utterance.lang.startsWith("ta") && matchingVoices.length === 0) {
+    if (utterance.lang.startsWith("ta") && sortedMatchingVoices.length === 0) {
       setVoiceNotice("இந்த device-ல் high-quality Tamil voice கிடைக்கவில்லை. Tamil pronunciation device-ஐ பொறுத்து மாறலாம்.");
     }
 
-    const bestVoice =
-      matchingVoices.find((v) => v.name.toLowerCase().includes("google")) ||
-      matchingVoices.find((v) => v.name.toLowerCase().includes("microsoft")) ||
-      matchingVoices.find((v) => v.name.toLowerCase().includes("natural")) ||
-      matchingVoices[0];
-
+    const bestVoice = sortedMatchingVoices[0];
     if (bestVoice) {
       utterance.voice = bestVoice;
     }
@@ -596,6 +664,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     utterance.onstart = () => {
       if (activeResponseIdRef.current !== responseId) return;
       
+      logTelemetry("Speech started", { text: cleanText });
       logTelemetry("tts_chunk_started", { text: cleanText, index: nextIndex });
 
       if (firstAudioTimeRef.current === 0) {
@@ -622,6 +691,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     utterance.onend = () => {
       if (activeResponseIdRef.current !== responseId) return;
 
+      logTelemetry("Speech finished");
       logTelemetry("tts_chunk_completed", { index: nextIndex });
       spokenSentenceIndicesRef.current.add(nextIndex);
       currentSpeechUtteranceRef.current = null;
