@@ -13,6 +13,7 @@ import {
   AlertCircle,
   Sparkles,
 } from "lucide-react";
+import { normalizeTamilSpeech, analyzeSemanticTurn, detectSpeechLanguage } from "../../utils/semanticDetector";
 
 interface VoiceModeOverlayProps {
   isOpen: boolean;
@@ -416,24 +417,23 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
           return;
         }
 
-        // Language-aware adaptive end-of-turn detection
+        // Multilingual semantic turn & language intelligence detection
         const combinedText = (currentFinalText + currentInterim).trim();
-        const isTamilSpeech = rec.lang.startsWith("ta");
-        
-        let timeoutDelay = 1400; // English default
-        if (isTamilSpeech) {
-          // Check Tamil suffix connective check (Unicode safe)
-          const isTamilIncomplete = /(மற்றும்|ஆனால்|அப்புறம்|அதுக்கப்புறம்|அதனால்|எனக்கு|எப்படி|என்ன|எதுக்கு|ஏன்னா|பற்றி|வந்து|அப்படின்னா|அதாவது|இல்லாட்டி|இருந்தா|சொல்லி|சொல்லிட்டு|பண்ணி|பண்ணிட்டு|வேண்டும் என்று|என்று|ன்னு)\s*$/.test(combinedText);
-          timeoutDelay = isTamilIncomplete ? 3000 : 2200; // longer pause for Tamil natural pace
-        } else {
-          const isIncomplete = /\b(and|but|or|so|because|if|when|how|what|why|who|help|create)\s*$/i.test(combinedText);
-          timeoutDelay = isIncomplete ? 2200 : 1400;
-        }
+        const normalizedText = normalizeTamilSpeech(combinedText);
+        const turnAnalysis = analyzeSemanticTurn(normalizedText);
+
+        logTelemetry("Detected Language", { language: turnAnalysis.detectedLanguage });
+        logTelemetry("Semantic Confidence", { confidence: turnAnalysis.confidence });
+        logTelemetry("Turn Detection Result", { isComplete: turnAnalysis.isComplete });
+        logTelemetry("Adaptive Timeout", { delay: turnAnalysis.adaptiveTimeout });
+
+        const timeoutDelay = turnAnalysis.adaptiveTimeout;
 
         silenceTimeoutRef.current = setTimeout(() => {
-          const finalSpeech = (finalTranscriptRef.current + interimTranscriptRef.current).trim();
+          const finalSpeech = normalizeTamilSpeech(finalTranscriptRef.current + interimTranscriptRef.current);
           if (finalSpeech && (stateRef.current === "USER_SPEAKING" || stateRef.current === "LISTENING")) {
-            logTelemetry("turn_submission_reason", { text: finalSpeech, reason: "SILENCE_TIMEOUT" });
+            logTelemetry("Submission Time", { timestamp: new Date().toISOString() });
+            logTelemetry("turn_submission_reason", { text: finalSpeech, reason: "SEMANTIC_TIMEOUT" });
             handleSubmitUserSpeech(finalSpeech);
           }
         }, timeoutDelay);
@@ -528,8 +528,8 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     logTelemetry("Transcript finalized", { text: speechText });
 
     // Auto language strategy: save language preference dynamically based on input content
-    const isTamilInput = /[\u0B80-\u0BFF]/.test(speechText);
-    if (isTamilInput) {
+    const detectedSpeechLang = detectSpeechLanguage(speechText);
+    if (detectedSpeechLang === "Tamil" || detectedSpeechLang === "Tanglish" || detectedSpeechLang === "Mixed") {
       localStorage.setItem("champai_speech_lang", "ta-IN");
     } else {
       localStorage.setItem("champai_speech_lang", "en-US");
