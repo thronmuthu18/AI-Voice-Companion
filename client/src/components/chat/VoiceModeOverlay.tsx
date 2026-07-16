@@ -21,14 +21,12 @@ interface VoiceModeOverlayProps {
 type VoiceState =
   | "IDLE"
   | "CONNECTING"
-  | "REQUESTING_MICROPHONE"
   | "LISTENING"
   | "USER_SPEAKING"
-  | "PROCESSING_SPEECH"
-  | "THINKING"
+  | "PROCESSING"
+  | "AI_THINKING"
   | "AI_SPEAKING"
   | "INTERRUPTED"
-  | "MUTED"
   | "ERROR";
 
 // Helper to split text into complete sentences, avoiding breaking technical terms
@@ -182,6 +180,53 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
   // Progressive assistant text state shown in Voice Modal during stream
   const [fullAssistantText, setFullAssistantText] = useState("");
 
+  // Session Duration Timer state
+  const [sessionDuration, setSessionDuration] = useState(0);
+
+  useEffect(() => {
+    let timerId: any = null;
+    if (isOpen && state !== "IDLE" && state !== "CONNECTING" && state !== "ERROR") {
+      timerId = setInterval(() => {
+        setSessionDuration((prev) => prev + 1);
+      }, 1000);
+    } else {
+      setSessionDuration(0);
+    }
+    return () => {
+      if (timerId) clearInterval(timerId);
+    };
+  }, [isOpen, state]);
+
+  const formatDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  // Keyboard accessibility shortcuts
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+      } else if (e.key === " " || e.code === "Space") {
+        e.preventDefault();
+        toggleMute();
+      } else if (e.key === "s" || e.key === "S" || e.key === "Enter") {
+        e.preventDefault();
+        handleInterrupt("KEYBOARD_SHORTCUT");
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, isMuted, state]);
+
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
@@ -235,6 +280,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
   const isDesktop = !/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
 
   const startVoiceSession = async () => {
+    logTelemetry("Voice session started");
     setState("CONNECTING");
     const sessionId = crypto.randomUUID();
     recognitionSessionIdRef.current = sessionId;
@@ -256,7 +302,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
       return;
     }
 
-    setState("REQUESTING_MICROPHONE");
+    setState("CONNECTING");
 
     try {
       // Prompt microphone permissions explicitly
@@ -297,7 +343,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
       rec.onstart = () => {
         logTelemetry("Recognition started");
         logTelemetry("recognition_started", { sessionId: recognitionSessionIdRef.current });
-        if (stateRef.current === "REQUESTING_MICROPHONE" || stateRef.current === "CONNECTING") {
+        if (stateRef.current === "CONNECTING") {
           setState("LISTENING");
           logTelemetry("speech_started");
         }
@@ -331,7 +377,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
         }
 
         // Ignore standard speech inputs if thinking or AI is speaking
-        if (stateRef.current === "THINKING" || stateRef.current === "AI_SPEAKING" || stateRef.current === "PROCESSING_SPEECH" || isMutedRef.current) {
+        if (stateRef.current === "AI_THINKING" || stateRef.current === "AI_SPEAKING" || stateRef.current === "PROCESSING" || isMutedRef.current) {
           return;
         }
 
@@ -388,7 +434,15 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
         console.error("Speech recognition service error:", e.error);
         if (e.error === "not-allowed" || e.error === "service-not-allowed") {
           setState("ERROR");
-          setErrorMessage("Microphone access was denied. Please check your system/browser settings.");
+          setErrorMessage("Microphone permission denied.");
+        } else if (e.error === "network") {
+          setState("ERROR");
+          setErrorMessage("Connection interrupted.");
+        } else if (e.error === "no-speech") {
+          // ignore
+        } else {
+          setState("ERROR");
+          setErrorMessage("Speech recognition stopped.");
         }
       };
 
@@ -413,11 +467,16 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     } catch (err: any) {
       console.error("Microphone capture failed:", err);
       setState("ERROR");
-      setErrorMessage("Microphone permission denied. Access is required for Voice Mode.");
+      if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") {
+        setErrorMessage("No microphone detected.");
+      } else {
+        setErrorMessage("Microphone permission denied.");
+      }
     }
   };
 
   const endVoiceSession = () => {
+    logTelemetry("Voice session ended");
     setState("IDLE");
 
     // Cancel speech synthesis
@@ -492,7 +551,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     setFullAssistantText("");
     setVoiceNotice("");
 
-    setState("THINKING");
+    setState("AI_THINKING");
 
     // Stop speech recognition immediately on mobile devices to prevent OS level audio ducking
     if (!isDesktop && recognitionRef.current) {
@@ -513,6 +572,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
         await fetchChats();
       }
 
+      setState("PROCESSING");
       // Stream response token-by-token directly using custom onToken callback
       await sendMessage(chatId, speechText, undefined, (token) => {
         // Discard tokens if user has interrupted or moved to a new turn
@@ -725,7 +785,11 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
       }
     }, estimatedDuration);
 
-    window.speechSynthesis.speak(utterance);
+    const speakDelay = nextIndex > 0 ? 300 : 0;
+    setTimeout(() => {
+      if (activeResponseIdRef.current !== responseId) return;
+      window.speechSynthesis.speak(utterance);
+    }, speakDelay);
   };
 
   const checkQueueFinished = (responseId: string) => {
@@ -739,19 +803,14 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
   };
 
   const resumeListening = () => {
-    if (isMutedRef.current) {
-      setState("MUTED");
-      return;
-    }
-
     setState("LISTENING");
     
     // Clear display transcripts for next turn
     setFinalTranscript("");
     setInterimTranscript("");
 
-    // Restart speech recognition safely
-    if (recognitionRef.current) {
+    // Restart speech recognition safely if NOT muted
+    if (!isMutedRef.current && recognitionRef.current) {
       try {
         recognitionRef.current.start();
       } catch (e) {
@@ -762,8 +821,9 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
 
   // Safe barge-in interruption logic
   const handleInterrupt = (source = "MANUAL_STOP") => {
-    if (stateRef.current === "AI_SPEAKING" || stateRef.current === "THINKING") {
+    if (stateRef.current === "AI_SPEAKING" || stateRef.current === "AI_THINKING") {
       setState("INTERRUPTED");
+      logTelemetry("Speech interrupted");
       logTelemetry("interruption_source", { source });
       
       // Stop speech synthesis immediately with explicit reason logged
@@ -797,7 +857,6 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     setIsMuted(nextMuted);
 
     if (nextMuted) {
-      setState("MUTED");
       if (recognitionRef.current) {
         try {
           recognitionRef.current.stop();
@@ -806,12 +865,13 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
         }
       }
     } else {
-      setState("LISTENING");
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.start();
-        } catch (e) {
-          // already started
+      if (stateRef.current === "LISTENING") {
+        if (recognitionRef.current) {
+          try {
+            recognitionRef.current.start();
+          } catch (e) {
+            // already started
+          }
         }
       }
     }
@@ -819,42 +879,39 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
 
   // Convert current state into user-friendly description
   const getStatusText = () => {
+    if (isMuted) {
+      return "🔇 Muted";
+    }
     switch (state) {
       case "CONNECTING":
         return "Connecting...";
-      case "REQUESTING_MICROPHONE":
-        return "Requesting microphone access...";
       case "LISTENING":
-        return voiceLang === "Tamil" || (voiceLang === "Auto" && localStorage.getItem("champai_speech_lang") === "ta-IN")
-          ? "Listening in Tamil..."
-          : "Listening in English...";
+        return "🎤 Listening...";
       case "USER_SPEAKING":
-        return "Listening...";
-      case "THINKING":
-        return "Champ.ai is thinking...";
-      case "PROCESSING_SPEECH":
-        return "Understanding...";
+        return "🎙️ Speaking...";
+      case "PROCESSING":
+        return "⏳ Understanding...";
+      case "AI_THINKING":
+        return "🧠 Thinking...";
       case "AI_SPEAKING":
-        return "Champ.ai is speaking...";
+        return "🔊 Speaking...";
       case "INTERRUPTED":
         return "Interrupted";
-      case "MUTED":
-        return "Microphone muted";
       case "ERROR":
-        return "Session error";
+        return "Error";
       default:
         return "Idle";
     }
   };
 
   // Map state to 3D morphing sphere animator states
-  const getOrbState = (): "idle" | "thinking" | "streaming" | "listening" | "error" => {
+  const getOrbState = (): "idle" | "listening" | "thinking" | "streaming" | "error" => {
     switch (state) {
       case "LISTENING":
       case "USER_SPEAKING":
         return "listening";
-      case "THINKING":
-      case "PROCESSING_SPEECH":
+      case "PROCESSING":
+      case "AI_THINKING":
         return "thinking";
       case "AI_SPEAKING":
         return "streaming";
@@ -889,14 +946,20 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
               <span className="text-sm font-black tracking-widest uppercase">Champ.ai Voice</span>
             </div>
 
-            {/* Language Selector Dropdown */}
+            {/* Language Selector Dropdown & Call Timer */}
             <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 bg-slate-900/50 border border-slate-800 rounded-xl px-2.5 py-1 text-xs text-slate-400 font-bold">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Call:</span>
+                <span className="text-blue-400 font-mono" aria-live="off">{formatDuration(sessionDuration)}</span>
+              </div>
+
               <div className="flex items-center gap-2 bg-slate-900/50 border border-slate-800 rounded-xl px-2.5 py-1">
                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Lang:</span>
                 <select
                   value={voiceLang}
                   onChange={(e) => handleLanguageChange(e.target.value)}
                   className="bg-transparent text-xs text-blue-400 font-bold outline-none cursor-pointer"
+                  aria-label="Select voice language"
                 >
                   <option value="Auto" className="bg-slate-950 text-white">Auto</option>
                   <option value="Tamil" className="bg-slate-950 text-white">தமிழ்</option>
@@ -908,6 +971,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
                 onClick={onClose}
                 className="rounded-full p-2 text-slate-400 hover:bg-slate-900 hover:text-white transition"
                 title="Close Voice Mode"
+                aria-label="Close Voice Mode"
               >
                 <X size={20} />
               </button>
@@ -927,7 +991,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
                 className={`absolute inset-0 rounded-full blur-3xl transition duration-500 scale-90 group-hover:scale-100 ${
                   state === "ERROR"
                     ? "bg-red-500/20"
-                    : state === "THINKING"
+                    : state === "AI_THINKING" || state === "PROCESSING"
                     ? "bg-purple-600/25"
                     : state === "AI_SPEAKING"
                     ? "bg-indigo-600/35"
@@ -944,7 +1008,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
             </div>
 
             {/* Status & Live Transcription block */}
-            <div className="text-center w-full max-w-lg min-h-[64px]">
+            <div className="text-center w-full max-w-lg min-h-[90px] flex flex-col justify-center items-center">
               <p
                 className={`text-xs font-semibold uppercase tracking-wider ${
                   state === "ERROR"
@@ -956,6 +1020,13 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
               >
                 {getStatusText()}
               </p>
+
+              {/* Interruption Prompt Banner */}
+              {state === "AI_SPEAKING" && (
+                <p className="mt-1 text-[10px] font-black text-indigo-400/70 uppercase tracking-widest animate-pulse select-none">
+                  {isDesktop ? "Speak to interrupt" : "Tap to interrupt"}
+                </p>
+              )}
 
               {/* Live Preview text */}
               <p className="mt-3 text-sm text-slate-400 font-medium italic min-h-[20px] px-4 truncate max-w-full">
@@ -975,9 +1046,21 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
             {state === "ERROR" && errorMessage && (
               <div className="rounded-2xl border border-red-900/35 bg-red-950/20 p-4 max-w-md w-full flex items-start gap-3">
                 <AlertCircle className="text-red-500 shrink-0 mt-0.5" size={18} />
-                <div className="text-left">
+                <div className="text-left flex-1">
                   <h4 className="text-xs font-bold text-red-500 uppercase tracking-wider">Voice Error</h4>
                   <p className="text-sm text-slate-350 mt-1 leading-relaxed">{errorMessage}</p>
+                  <button
+                    onClick={() => {
+                      endVoiceSession();
+                      setTimeout(() => {
+                        startVoiceSession();
+                      }, 300);
+                    }}
+                    className="mt-3 text-xs bg-red-600 hover:bg-red-500 text-white font-bold px-3 py-1.5 rounded-xl transition duration-200"
+                    aria-label="Retry voice session"
+                  >
+                    Retry Connection
+                  </button>
                 </div>
               </div>
             )}
@@ -1025,7 +1108,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
                   )}
 
                   {/* Show live stream response if assistant is generating/speaking */}
-                  {fullAssistantText && (state === "THINKING" || state === "AI_SPEAKING") && (
+                  {fullAssistantText && (state === "AI_THINKING" || state === "PROCESSING" || state === "AI_SPEAKING") && (
                     <div className="flex flex-col items-start">
                       <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
                         Champ.ai
