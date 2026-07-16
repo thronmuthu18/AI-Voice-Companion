@@ -201,6 +201,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
   const isDesktop = !/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
 
   const startVoiceSession = async () => {
+    logTelemetry("Session Started");
     logTelemetry("Voice session started");
     setState("CONNECTING");
     const sessionId = crypto.randomUUID();
@@ -223,10 +224,8 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
       return;
     }
 
-    logTelemetry("Voice session started");
-    setState("CONNECTING");
-
     try {
+      logTelemetry("AudioContext Created");
       // Prompt microphone permissions explicitly
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -237,11 +236,13 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
       });
 
       localStreamRef.current = stream;
+      logTelemetry("Stream Started");
 
       // Initialize speech recognition
       const rec = new SpeechRecognition();
       rec.continuous = true;
       rec.interimResults = true;
+      logTelemetry("Recognition Created");
 
       // Set target speech capture lang based on settings
       let targetLang = "en-US";
@@ -409,6 +410,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
   };
 
   const endVoiceSession = () => {
+    logTelemetry("Session Finished");
     logTelemetry("Voice session ended");
     setState("IDLE");
 
@@ -416,24 +418,41 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     cancelSpeechPlaybacks("SESSION_ENDED");
 
     // Clear active timeouts
-    if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
-    if (aiSpeakingSafetyTimeoutRef.current) clearTimeout(aiSpeakingSafetyTimeoutRef.current);
+    if (silenceTimeoutRef.current) {
+      clearTimeout(silenceTimeoutRef.current);
+      silenceTimeoutRef.current = null;
+    }
+    if (aiSpeakingSafetyTimeoutRef.current) {
+      clearTimeout(aiSpeakingSafetyTimeoutRef.current);
+      aiSpeakingSafetyTimeoutRef.current = null;
+    }
 
     // Stop mic stream tracks completely
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((track) => track.stop());
       localStreamRef.current = null;
+      logTelemetry("Stream Finished");
     }
 
-    // Stop recognition
+    // Stop recognition with strict callback nullification
     if (recognitionRef.current) {
+      const rec = recognitionRef.current;
+      rec.onstart = null;
+      rec.onresult = null;
+      rec.onerror = null;
+      rec.onend = null;
+
       try {
-        recognitionRef.current.stop();
+        rec.stop();
       } catch (e) {
         // already stopped
       }
+
       recognitionRef.current = null;
+      logTelemetry("Recognition Destroyed");
     }
+
+    logTelemetry("AudioContext Closed");
   };
 
   const cancelSpeechPlaybacks = (reason: string) => {
@@ -448,6 +467,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
 
     currentSpeechUtteranceRef.current = null;
     sentenceQueueRef.current = [];
+    logTelemetry("Speech Queue Destroyed");
     spokenSentenceIndicesRef.current.clear();
     activeUtteranceIndexRef.current = -1;
     currentStreamTextRef.current = "";
@@ -490,6 +510,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     // Reset sentence queue parameters
     currentStreamTextRef.current = "";
     sentenceQueueRef.current = [];
+    logTelemetry("Speech Queue Created");
     spokenSentenceIndicesRef.current.clear();
     activeUtteranceIndexRef.current = -1;
     isStreamFinishedRef.current = false;
