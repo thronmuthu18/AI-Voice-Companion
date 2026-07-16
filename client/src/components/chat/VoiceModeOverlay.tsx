@@ -313,6 +313,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
       return;
     }
 
+    logTelemetry("Voice session started");
     setState("CONNECTING");
 
     try {
@@ -374,16 +375,28 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
         }
 
         // Automatic voice-triggered interruption (barge-in) ONLY on desktop browsers
-        if (stateRef.current === "AI_SPEAKING" && isDesktop && (currentInterim.trim().length > 3 || accumulatedFinal.trim().length > 3)) {
-          const currentSentence = activeUtteranceIndexRef.current >= 0 ? sentenceQueueRef.current[activeUtteranceIndexRef.current] || "" : "";
-          const userWords = (currentInterim || accumulatedFinal).toLowerCase().split(/\s+/);
-          const aiWords = currentSentence.toLowerCase().split(/\s+/);
-          
-          // Verify user words represent new intent rather than echo playback loopback
-          const isUniqueSpeech = userWords.some(word => word.length > 2 && !aiWords.includes(word));
-          if (isUniqueSpeech) {
-            handleInterrupt("CONFIRMED_USER_SPEECH");
-            return;
+        const cleanInterim = (currentInterim || accumulatedFinal).trim();
+        if (stateRef.current === "AI_SPEAKING" && isDesktop && cleanInterim.length > 2) {
+          const userWords = cleanInterim.toLowerCase().split(/\s+/);
+
+          // Trigger if at least 2 words are spoken or 1 word >= 5 chars
+          const longWords = userWords.filter(w => w.length > 2);
+          if (longWords.length >= 2 || (longWords.length === 1 && longWords[0].length >= 5)) {
+            const aiWords = (currentStreamTextRef.current || "").toLowerCase().split(/\s+/);
+            const recentAiWords = aiWords.slice(-15);
+            const isLeakage = longWords.every(word => recentAiWords.includes(word));
+
+            if (!isLeakage) {
+              logTelemetry("User interruption detected", { userInterim: cleanInterim });
+              handleInterruptionBargeIn();
+
+              if (accumulatedFinal) {
+                finalTranscriptRef.current = accumulatedFinal;
+                setFinalTranscript(accumulatedFinal);
+              }
+              setInterimTranscript(currentInterim);
+              return;
+            }
           }
         }
 
@@ -514,9 +527,25 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
   };
 
   const cancelSpeechPlaybacks = (reason: string) => {
+    logTelemetry("Speech cancelled");
     logTelemetry("speech_cancel_reason", { reason });
-    window.speechSynthesis.cancel();
+
+    try {
+      window.speechSynthesis.cancel();
+    } catch (e) {
+      console.warn("speechSynthesis.cancel failed:", e);
+    }
+
     currentSpeechUtteranceRef.current = null;
+    sentenceQueueRef.current = [];
+    spokenSentenceIndicesRef.current.clear();
+    activeUtteranceIndexRef.current = -1;
+    currentStreamTextRef.current = "";
+
+    if (aiSpeakingSafetyTimeoutRef.current) {
+      clearTimeout(aiSpeakingSafetyTimeoutRef.current);
+      aiSpeakingSafetyTimeoutRef.current = null;
+    }
   };
 
   const handleSubmitUserSpeech = async (speechText: string) => {
@@ -734,7 +763,9 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     // Measure time to first audio output
     utterance.onstart = () => {
       if (activeResponseIdRef.current !== responseId) return;
-      
+
+      logTelemetry("AI speaking", { text: cleanText });
+      logTelemetry("Playback restarted");
       logTelemetry("Speech started", { text: cleanText });
       logTelemetry("tts_chunk_started", { text: cleanText, index: nextIndex });
 
@@ -830,23 +861,43 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     }
   };
 
-  // Safe barge-in interruption logic
-  const handleInterrupt = (source = "MANUAL_STOP") => {
-    if (stateRef.current === "AI_SPEAKING" || stateRef.current === "AI_THINKING") {
-      setState("INTERRUPTED");
-      logTelemetry("Speech interrupted");
-      logTelemetry("interruption_source", { source });
-      
-      // Stop speech synthesis immediately with explicit reason logged
-      cancelSpeechPlaybacks(source);
-      
+  const handleInterruptionBargeIn = () => {
+    if (stateRef.current === "AI_SPEAKING" || stateRef.current === "AI_THINKING" || stateRef.current === "PROCESSING") {
+      logTelemetry("User interruption detected");
+
+      // Stop speech synthesis immediately
+      cancelSpeechPlaybacks("USER_BARGE_IN");
       if (aiSpeakingSafetyTimeoutRef.current) clearTimeout(aiSpeakingSafetyTimeoutRef.current);
 
       // Invalidate current response completely
       activeResponseIdRef.current = "";
       sentenceQueueRef.current = [];
       activeUtteranceIndexRef.current = -1;
-      
+
+      // Transition to USER_SPEAKING state without clearing transcripts
+      setState("USER_SPEAKING");
+      setFullAssistantText("");
+      logTelemetry("Playback restarted");
+    }
+  };
+
+  // Safe barge-in interruption logic
+  const handleInterrupt = (source = "MANUAL_STOP") => {
+    if (stateRef.current === "AI_SPEAKING" || stateRef.current === "AI_THINKING") {
+      setState("INTERRUPTED");
+      logTelemetry("User interruption detected");
+      logTelemetry("interruption_source", { source });
+
+      // Stop speech synthesis immediately with explicit reason logged
+      cancelSpeechPlaybacks(source);
+
+      if (aiSpeakingSafetyTimeoutRef.current) clearTimeout(aiSpeakingSafetyTimeoutRef.current);
+
+      // Invalidate current response completely
+      activeResponseIdRef.current = "";
+      sentenceQueueRef.current = [];
+      activeUtteranceIndexRef.current = -1;
+
       resumeListening();
     }
   };
