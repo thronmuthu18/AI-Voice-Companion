@@ -53,6 +53,10 @@ const envSchema = z.object({
   ENABLE_PROVIDER_ROUTER: z.preprocess((val) => val === 'true' || val === true, z.boolean()).default(true),
 
   OPENAI_API_KEY: z.string().default(''),
+  REALTIME_VOICE_ENABLED: z.preprocess((val) => val === 'true' || val === true, z.boolean()).default(false),
+  REALTIME_VOICE_PROVIDER: z.string().default('openai'),
+  REALTIME_VOICE_MODEL: z.string().default('gpt-4o-mini-realtime-preview-2024-12-17'),
+  REALTIME_VOICE_MAX_SESSION_MINUTES: z.coerce.number().default(15),
 
   // Email Verification & Google Auth Configs
   RESEND_API_KEY: z.string().default(''),
@@ -115,6 +119,11 @@ function loadEnv(): Env {
 
     if (!env.GOOGLE_CLIENT_ID) {
       console.error('[Config] CRITICAL: GOOGLE_CLIENT_ID is required in production.');
+      process.exit(1);
+    }
+
+    if (env.REALTIME_VOICE_ENABLED && !env.OPENAI_API_KEY) {
+      console.error('[Config] CRITICAL: OPENAI_API_KEY is required in production when REALTIME_VOICE_ENABLED=true.');
       process.exit(1);
     }
   }
