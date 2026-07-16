@@ -6,6 +6,7 @@ import { streamService } from "../services/stream.service";
 import { intelligenceService } from "../services/intelligence.service";
 import { contextService } from "../services/context.service";
 import { coordinatorAgent } from "../services/agents/coordinator.agent";
+import { toolRouter } from "../services/tools/toolRouter";
 import { auditService } from "../services/audit.service";
 import { entitlementService } from "../services/entitlement.service";
 
@@ -74,8 +75,15 @@ export class AIController {
       const activeCtx = { chatId, latestImage, latestDocument, latestAudio };
       const resolvedMessage = contextService.resolveReferences(message, activeCtx);
 
-      // Coordinate execution via Multi-Agent Orchestrator
-      const orchestration = await coordinatorAgent.coordinate(resolvedMessage, classification.intents, activeCtx);
+      // Route execution via ToolRouter
+      const workspaceCtx = {
+        chatId,
+        latestImage,
+        latestDocument,
+        latestAudio,
+      };
+
+      const routerResult = await toolRouter.routeAndExecute(resolvedMessage, workspaceCtx);
 
       if (userId && reservedFeature) {
         auditService.log("USAGE_INCREMENTED" as any, userId, { chatId, feature: reservedFeature }, req.ip);
@@ -84,14 +92,14 @@ export class AIController {
       const assistantMessage = await messageService.createMessage(
         chatId,
         "assistant",
-        orchestration.content,
-        orchestration.attachments
+        routerResult.content,
+        routerResult.attachments
       );
 
       return res.status(200).json({
         success: true,
         assistantMessage,
-        response: orchestration.content,
+        response: routerResult.content,
       });
     } catch (error: any) {
       if (userId && reservedFeature) {

@@ -10,6 +10,8 @@ export class ChatTool implements Tool {
   outputSchema = { type: "string" };
   priority = 10;
   availability = true;
+  requiredFiles = [];
+  streamingSupport = true;
   async execute(_input: string, context: ToolContext): Promise<any> {
     return await aiService.generateResponse(context.chatId);
   }
@@ -24,6 +26,8 @@ export class ImageGenerationTool implements Tool {
   outputSchema = { type: "string", description: "Relative URL of the generated image" };
   priority = 1;
   availability = true;
+  requiredFiles = [];
+  streamingSupport = false;
   async execute(input: string, _context: ToolContext): Promise<any> {
     return await aiService.generateImage(input);
   }
@@ -38,6 +42,8 @@ export class ImageEditingTool implements Tool {
   outputSchema = { type: "string", description: "Relative URL of the edited image" };
   priority = 2;
   availability = true;
+  requiredFiles = ["image"];
+  streamingSupport = false;
   async execute(input: string, context: ToolContext): Promise<any> {
     if (!context.latestImage) {
       throw new Error("No image context found for editing");
@@ -55,6 +61,8 @@ export class VisionAnalysisTool implements Tool {
   outputSchema = { type: "string" };
   priority = 3;
   availability = true;
+  requiredFiles = ["image"];
+  streamingSupport = true;
   async execute(_input: string, context: ToolContext): Promise<any> {
     return await aiService.generateResponse(context.chatId);
   }
@@ -64,11 +72,13 @@ export class VisionAnalysisTool implements Tool {
 export class DocumentAnalysisTool implements Tool {
   name = "Document Analysis Tool";
   description = "Reads, parses, and answers questions about PDF, DOCX, TXT, or CSV files.";
-  capabilities = ["document_reading", "document_summarization"];
+  capabilities = ["document_reading", "document_summarization", "document_analysis"];
   inputSchema = { type: "string" };
   outputSchema = { type: "string" };
   priority = 4;
   availability = true;
+  requiredFiles = ["document"];
+  streamingSupport = true;
   async execute(_input: string, context: ToolContext): Promise<any> {
     return await aiService.generateResponse(context.chatId);
   }
@@ -83,6 +93,8 @@ export class OCRTool implements Tool {
   outputSchema = { type: "string" };
   priority = 5;
   availability = true;
+  requiredFiles = ["image"];
+  streamingSupport = false;
   async execute(_input: string, context: ToolContext): Promise<any> {
     return await aiService.generateResponse(context.chatId);
   }
@@ -97,6 +109,8 @@ export class TranslationTool implements Tool {
   outputSchema = { type: "string" };
   priority = 6;
   availability = true;
+  requiredFiles = [];
+  streamingSupport = true;
   async execute(_input: string, context: ToolContext): Promise<any> {
     return await aiService.generateResponse(context.chatId);
   }
@@ -111,6 +125,8 @@ export class SummarizationTool implements Tool {
   outputSchema = { type: "string" };
   priority = 7;
   availability = true;
+  requiredFiles = [];
+  streamingSupport = true;
   async execute(_input: string, context: ToolContext): Promise<any> {
     return await aiService.generateResponse(context.chatId);
   }
@@ -120,11 +136,13 @@ export class SummarizationTool implements Tool {
 export class VoiceTool implements Tool {
   name = "Voice Tool";
   description = "Processes specific voice interface commands or speech settings.";
-  capabilities = ["voice_processing", "audio_commands"];
+  capabilities = ["voice_processing", "audio_commands", "voice_request"];
   inputSchema = { type: "string" };
   outputSchema = { type: "string" };
   priority = 8;
   availability = true;
+  requiredFiles = [];
+  streamingSupport = true;
   async execute(_input: string, context: ToolContext): Promise<any> {
     return await aiService.generateResponse(context.chatId);
   }
@@ -134,11 +152,13 @@ export class VoiceTool implements Tool {
 export class ReasoningTool implements Tool {
   name = "Reasoning Tool";
   description = "Solves complex logical queries, algebraic calculations, and puzzles.";
-  capabilities = ["reasoning", "complex_logic"];
+  capabilities = ["reasoning", "complex_logic", "reasoning_request"];
   inputSchema = { type: "string" };
   outputSchema = { type: "string" };
   priority = 9;
   availability = true;
+  requiredFiles = [];
+  streamingSupport = true;
   async execute(_input: string, context: ToolContext): Promise<any> {
     return await aiService.generateResponse(context.chatId);
   }
@@ -148,11 +168,13 @@ export class ReasoningTool implements Tool {
 export class CodeGenerationTool implements Tool {
   name = "Code Generation Tool";
   description = "Generates software code, web pages, or scripts based on requirements.";
-  capabilities = ["code_generation", "programming"];
+  capabilities = ["code_generation"];
   inputSchema = { type: "string" };
   outputSchema = { type: "string" };
   priority = 11;
   availability = true;
+  requiredFiles = [];
+  streamingSupport = true;
   async execute(_input: string, context: ToolContext): Promise<any> {
     return await aiService.generateResponse(context.chatId);
   }
@@ -167,6 +189,8 @@ export class CodeDebuggingTool implements Tool {
   outputSchema = { type: "string" };
   priority = 12;
   availability = true;
+  requiredFiles = [];
+  streamingSupport = true;
   async execute(_input: string, context: ToolContext): Promise<any> {
     return await aiService.generateResponse(context.chatId);
   }
@@ -176,67 +200,127 @@ export class CodeDebuggingTool implements Tool {
 export class MathematicsTool implements Tool {
   name = "Mathematics Tool";
   description = "Solves equations, performs math analysis, and evaluates numbers.";
-  capabilities = ["math", "calculation"];
+  capabilities = ["math", "calculation", "mathematics"];
   inputSchema = { type: "string" };
   outputSchema = { type: "string" };
   priority = 13;
   availability = true;
+  requiredFiles = [];
+  streamingSupport = true;
   async execute(_input: string, context: ToolContext): Promise<any> {
     return await aiService.generateResponse(context.chatId);
   }
 }
 
-// --- Future Placeholder Tools (Architecture-only Representation) ---
-
-export class WebSearchTool implements Tool {
-  name = "Web Search Tool";
-  description = "Search the live web for real-time information.";
-  capabilities = ["web_search"];
+// Document Generation Tool
+export class DocumentGenerationTool implements Tool {
+  name = "Document Generation Tool";
+  description = "Generates formatted reports, letters, and text documents.";
+  capabilities = ["document_generation"];
   inputSchema = { type: "string" };
   outputSchema = { type: "string" };
   priority = 14;
-  availability = false; // Set to false to indicate placeholder
+  availability = true;
+  requiredFiles = [];
+  streamingSupport = false;
+  async execute(_input: string, context: ToolContext): Promise<any> {
+    return await aiService.generateResponse(context.chatId);
+  }
+}
+
+// Excel Generation Tool
+export class ExcelGenerationTool implements Tool {
+  name = "Excel Generation Tool";
+  description = "Generates spreadsheet tables, budgets, and tabular data.";
+  capabilities = ["excel_generation"];
+  inputSchema = { type: "string" };
+  outputSchema = { type: "string" };
+  priority = 15;
+  availability = true;
+  requiredFiles = [];
+  streamingSupport = false;
+  async execute(_input: string, context: ToolContext): Promise<any> {
+    return await aiService.generateResponse(context.chatId);
+  }
+}
+
+// Code Assistant Tool
+export class CodeAssistantTool implements Tool {
+  name = "Code Assistant Tool";
+  description = "Assists in conceptual software engineering questions.";
+  capabilities = ["programming", "code_assistant"];
+  inputSchema = { type: "string" };
+  outputSchema = { type: "string" };
+  priority = 16;
+  availability = true;
+  requiredFiles = [];
+  streamingSupport = true;
+  async execute(_input: string, context: ToolContext): Promise<any> {
+    return await aiService.generateResponse(context.chatId);
+  }
+}
+
+// Web Search Tool
+export class WebSearchTool implements Tool {
+  name = "Web Search Tool";
+  description = "Search the live web for real-time information.";
+  capabilities = ["web_search", "search_request"];
+  inputSchema = { type: "string" };
+  outputSchema = { type: "string" };
+  priority = 17;
+  availability = false;
+  requiredFiles = [];
+  streamingSupport = false;
   async execute(): Promise<any> {
     throw new Error("Web Search Tool is currently in development (architecture only).");
   }
 }
 
-export class AutomationTool implements Tool {
-  name = "Automation Tool";
-  description = "Trigger workflows or task automation sequences.";
-  capabilities = ["automation"];
+// Future Video Generation Tool
+export class FutureVideoGenerationTool implements Tool {
+  name = "Future Video Generation Tool";
+  description = "Generates videos from scratch based on user prompts.";
+  capabilities = ["video_generation", "video_request"];
   inputSchema = { type: "string" };
   outputSchema = { type: "string" };
-  priority = 15;
+  priority = 18;
   availability = false;
+  requiredFiles = [];
+  streamingSupport = false;
   async execute(): Promise<any> {
-    throw new Error("Automation Tool is currently in development (architecture only).");
+    throw new Error("Video Generation Tool is currently in development (architecture only).");
   }
 }
 
-export class CalendarTool implements Tool {
-  name = "Calendar Tool";
-  description = "Manage user calendar invites, schedules, and events.";
-  capabilities = ["calendar"];
+// Future Tasks Tool
+export class FutureTasksTool implements Tool {
+  name = "Future Tasks Tool";
+  description = "Manages lists of to-do items and automated tasks.";
+  capabilities = ["tasks", "future_tasks"];
   inputSchema = { type: "string" };
   outputSchema = { type: "string" };
-  priority = 16;
+  priority = 19;
   availability = false;
+  requiredFiles = [];
+  streamingSupport = false;
   async execute(): Promise<any> {
-    throw new Error("Calendar Tool is currently in development (architecture only).");
+    throw new Error("Tasks Tool is currently in development (architecture only).");
   }
 }
 
-export class EmailTool implements Tool {
-  name = "Email Tool";
-  description = "Send and read user emails.";
-  capabilities = ["email"];
+// Future Memory Tool
+export class FutureMemoryTool implements Tool {
+  name = "Future Memory Tool";
+  description = "Manages long-term conversation memories and facts.";
+  capabilities = ["memory", "future_memory"];
   inputSchema = { type: "string" };
   outputSchema = { type: "string" };
-  priority = 17;
+  priority = 20;
   availability = false;
+  requiredFiles = [];
+  streamingSupport = false;
   async execute(): Promise<any> {
-    throw new Error("Email Tool is currently in development (architecture only).");
+    throw new Error("Memory Tool is currently in development (architecture only).");
   }
 }
 
@@ -258,10 +342,13 @@ export class ToolRegistry {
     this.register(new CodeGenerationTool());
     this.register(new CodeDebuggingTool());
     this.register(new MathematicsTool());
+    this.register(new DocumentGenerationTool());
+    this.register(new ExcelGenerationTool());
+    this.register(new CodeAssistantTool());
     this.register(new WebSearchTool());
-    this.register(new AutomationTool());
-    this.register(new CalendarTool());
-    this.register(new EmailTool());
+    this.register(new FutureVideoGenerationTool());
+    this.register(new FutureTasksTool());
+    this.register(new FutureMemoryTool());
   }
 
   register(tool: Tool) {

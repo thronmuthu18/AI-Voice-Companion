@@ -14,5 +14,7 @@ export interface Tool {
   outputSchema: any;
   priority: number;
   availability: boolean;
+  requiredFiles: string[]; // e.g. ["image"], ["document"]
+  streamingSupport: boolean;
   execute(input: string, context: ToolContext): Promise<any>;
 }
