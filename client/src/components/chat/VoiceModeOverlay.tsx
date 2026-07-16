@@ -6,9 +6,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Mic,
   MicOff,
+  Volume2,
   VolumeX,
   X,
-  PhoneOff,
+  Square,
   AlertCircle,
   Sparkles,
 } from "lucide-react";
@@ -138,7 +139,8 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
   const [finalTranscript, setFinalTranscript] = useState("");
   const [interimTranscript, setInterimTranscript] = useState("");
   
-  const [isMuted, setIsMuted] = useState(false);
+  const [isMicEnabled, setIsMicEnabled] = useState(true);
+  const [isAudioMuted, setIsAudioMuted] = useState(false);
   
   // Voice Language Preference settings: Auto, Tamil, English
   const [voiceLang, setVoiceLang] = useState(() => {
@@ -171,7 +173,8 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
 
   // Keep refs of values needed in async callbacks to prevent closures on stale state
   const stateRef = useRef<VoiceState>(state);
-  const isMutedRef = useRef<boolean>(isMuted);
+  const isMicEnabledRef = useRef<boolean>(isMicEnabled);
+  const isAudioMutedRef = useRef<boolean>(isAudioMuted);
   const chatRef = useRef<any>(currentChat);
   const finalTranscriptRef = useRef(finalTranscript);
   const interimTranscriptRef = useRef(interimTranscript);
@@ -213,6 +216,9 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
         onClose();
       } else if (e.key === " " || e.code === "Space") {
         e.preventDefault();
+        toggleMic();
+      } else if (e.key === "m" || e.key === "M") {
+        e.preventDefault();
         toggleMute();
       } else if (e.key === "s" || e.key === "S" || e.key === "Enter") {
         e.preventDefault();
@@ -225,15 +231,19 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
       window.removeEventListener("keydown", handleKeyDown);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, isMuted, state]);
+  }, [isOpen, isMicEnabled, isAudioMuted, state]);
 
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
 
   useEffect(() => {
-    isMutedRef.current = isMuted;
-  }, [isMuted]);
+    isMicEnabledRef.current = isMicEnabled;
+  }, [isMicEnabled]);
+
+  useEffect(() => {
+    isAudioMutedRef.current = isAudioMuted;
+  }, [isAudioMuted]);
 
   useEffect(() => {
     chatRef.current = currentChat;
@@ -377,7 +387,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
         }
 
         // Ignore standard speech inputs if thinking or AI is speaking
-        if (stateRef.current === "AI_THINKING" || stateRef.current === "AI_SPEAKING" || stateRef.current === "PROCESSING" || isMutedRef.current) {
+        if (stateRef.current === "AI_THINKING" || stateRef.current === "AI_SPEAKING" || stateRef.current === "PROCESSING" || !isMicEnabledRef.current) {
           return;
         }
 
@@ -453,7 +463,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
         const wantListening = current === "LISTENING" || current === "USER_SPEAKING";
         const allowSpeechBargeIn = current === "AI_SPEAKING" && isDesktop;
 
-        if (!isMutedRef.current && (wantListening || allowSpeechBargeIn)) {
+        if (isMicEnabledRef.current && (wantListening || allowSpeechBargeIn)) {
           try {
             recognitionRef.current?.start();
           } catch (err) {
@@ -676,6 +686,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     setState("AI_SPEAKING");
 
     const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.volume = isAudioMutedRef.current ? 0 : 1;
     utterance.lang = detectDominantLanguage(cleanText);
 
     const voices = window.speechSynthesis.getVoices();
@@ -809,8 +820,8 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     setFinalTranscript("");
     setInterimTranscript("");
 
-    // Restart speech recognition safely if NOT muted
-    if (!isMutedRef.current && recognitionRef.current) {
+    // Restart speech recognition safely if mic is enabled
+    if (isMicEnabledRef.current && recognitionRef.current) {
       try {
         recognitionRef.current.start();
       } catch (e) {
@@ -852,11 +863,11 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     }, 250);
   };
 
-  const toggleMute = () => {
-    const nextMuted = !isMuted;
-    setIsMuted(nextMuted);
+  const toggleMic = () => {
+    const nextEnabled = !isMicEnabled;
+    setIsMicEnabled(nextEnabled);
 
-    if (nextMuted) {
+    if (!nextEnabled) {
       if (recognitionRef.current) {
         try {
           recognitionRef.current.stop();
@@ -877,10 +888,19 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     }
   };
 
+  const toggleMute = () => {
+    const nextMuted = !isAudioMuted;
+    setIsAudioMuted(nextMuted);
+
+    if (currentSpeechUtteranceRef.current) {
+      currentSpeechUtteranceRef.current.volume = nextMuted ? 0 : 1;
+    }
+  };
+
   // Convert current state into user-friendly description
   const getStatusText = () => {
-    if (isMuted) {
-      return "🔇 Muted";
+    if (!isMicEnabled) {
+      return "🎙️ Mic Off";
     }
     switch (state) {
       case "CONNECTING":
@@ -1125,26 +1145,32 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
 
           {/* Bottom Call Controls bar */}
           <div className="max-w-md w-full mx-auto flex items-center justify-center gap-6 mt-6">
-            {/* Toggle Mute Button */}
+            {/* Toggle Mic Button */}
             <button
-              onClick={toggleMute}
+              onClick={toggleMic}
               className={`rounded-full p-4 border transition duration-200 hover:scale-105 active:scale-95 ${
-                isMuted
+                !isMicEnabled
                   ? "bg-red-500/10 border-red-500/20 text-red-500 hover:bg-red-500/20"
                   : "bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700"
               }`}
-              title={isMuted ? "Unmute Microphone" : "Mute Microphone"}
+              title={isMicEnabled ? "Disable Microphone" : "Enable Microphone"}
+              aria-label={isMicEnabled ? "Disable Microphone" : "Enable Microphone"}
             >
-              {isMuted ? <MicOff size={22} /> : <Mic size={22} />}
+              {isMicEnabled ? <Mic size={22} /> : <MicOff size={22} />}
             </button>
 
-            {/* End Call / Return to Chat Button */}
+            {/* Toggle Audio Mute Button */}
             <button
-              onClick={onClose}
-              className="rounded-full p-4 bg-red-600 text-white hover:bg-red-500 hover:scale-105 active:scale-95 shadow-lg transition duration-200"
-              title="End Voice Conversation"
+              onClick={toggleMute}
+              className={`rounded-full p-4 border transition duration-200 hover:scale-105 active:scale-95 ${
+                isAudioMuted
+                  ? "bg-red-500/10 border-red-500/20 text-red-500 hover:bg-red-500/20"
+                  : "bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700"
+              }`}
+              title={isAudioMuted ? "Unmute Assistant Volume" : "Mute Assistant Volume"}
+              aria-label={isAudioMuted ? "Unmute Assistant Volume" : "Mute Assistant Volume"}
             >
-              <PhoneOff size={22} />
+              {isAudioMuted ? <VolumeX size={22} /> : <Volume2 size={22} />}
             </button>
 
             {/* Stop Speaking / Interruption button */}
@@ -1157,8 +1183,19 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
                   : "bg-slate-950 border-slate-900 text-slate-700 cursor-not-allowed opacity-40"
               }`}
               title="Stop Speaking"
+              aria-label="Stop Speaking"
             >
-              <VolumeX size={22} />
+              <Square size={22} />
+            </button>
+
+            {/* Close Overlay Button */}
+            <button
+              onClick={onClose}
+              className="rounded-full p-4 bg-red-600 text-white hover:bg-red-500 hover:scale-105 active:scale-95 shadow-lg transition duration-200"
+              title="Close Voice Mode"
+              aria-label="Close Voice Mode"
+            >
+              <X size={22} />
             </button>
           </div>
         </motion.div>
