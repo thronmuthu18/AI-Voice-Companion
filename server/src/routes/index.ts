@@ -13,7 +13,6 @@ import messageRouter from "./message.routes";
 import aiRouter from "./ai.routes";
 import uploadRouter from "./upload.routes";
 import subscriptionRouter from "./subscription.routes";
-import voiceRouter from "./voice.routes";
 
 export function registerRoutes(app: Application): void {
   app.use("/api", healthRouter);
@@ -31,6 +30,4 @@ export function registerRoutes(app: Application): void {
   app.use("/api/upload", uploadRouter);
 
   app.use("/api/v1", subscriptionRouter);
-
-  app.use("/api/voice", voiceRouter);
 }

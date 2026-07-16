@@ -12,7 +12,6 @@ import {
   AlertCircle,
   Sparkles,
 } from "lucide-react";
-import { voiceService } from "../../services/voice.service";
 
 interface VoiceModeOverlayProps {
   isOpen: boolean;
@@ -114,11 +113,6 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
   
   const [isMuted, setIsMuted] = useState(false);
   
-  // Voice Engine settings: Realtime (OpenAI WebRTC), Standard (Browser synthesis)
-  const [voiceModeType, setVoiceModeType] = useState<"Standard" | "Realtime">((() => {
-    return (localStorage.getItem("champai_voice_mode_type") as "Standard" | "Realtime") || "Standard";
-  })());
-
   // Voice Language Preference settings: Auto, Tamil, English
   const [voiceLang, setVoiceLang] = useState(() => {
     return localStorage.getItem("champai_voice_lang") || "Auto";
@@ -127,7 +121,6 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
   // Device voice quality notice message state
   const [voiceNotice, setVoiceNotice] = useState("");
 
-  // Refs for standard fallback
   const recognitionRef = useRef<any>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const silenceTimeoutRef = useRef<any>(null);
@@ -149,13 +142,6 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
   const isStreamFinishedRef = useRef<boolean>(false);
   const recognitionSessionIdRef = useRef<string>("");
 
-  // WebRTC Native Realtime refs
-  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
-  const dataChannelRef = useRef<RTCDataChannel | null>(null);
-  const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
-  const lastUserTranscriptRef = useRef<string>("");
-  const lastAssistantTranscriptRef = useRef<string>("");
-
   // Keep refs of values needed in async callbacks to prevent closures on stale state
   const stateRef = useRef<VoiceState>(state);
   const isMutedRef = useRef<boolean>(isMuted);
@@ -163,7 +149,6 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
   const finalTranscriptRef = useRef(finalTranscript);
   const interimTranscriptRef = useRef(interimTranscript);
   const voiceLangRef = useRef(voiceLang);
-  const voiceModeTypeRef = useRef(voiceModeType);
 
   // Progressive assistant text state shown in Voice Modal during stream
   const [fullAssistantText, setFullAssistantText] = useState("");
@@ -191,22 +176,6 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
   useEffect(() => {
     voiceLangRef.current = voiceLang;
   }, [voiceLang]);
-
-  useEffect(() => {
-    voiceModeTypeRef.current = voiceModeType;
-  }, [voiceModeType]);
-
-  // Audio element setup for WebRTC playout
-  useEffect(() => {
-    const audio = document.createElement("audio");
-    audio.autoplay = true;
-    remoteAudioRef.current = audio;
-    return () => {
-      audio.srcObject = null;
-      audio.remove();
-      remoteAudioRef.current = null;
-    };
-  }, []);
 
   // Telemetry logger
   const logTelemetry = (event: string, details?: any) => {
@@ -236,248 +205,11 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
   // Detect platform device layout
   const isDesktop = !/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
 
-  const cancelSpeechPlaybacks = (reason: string) => {
-    logTelemetry("speech_cancel_reason", { reason });
-    window.speechSynthesis.cancel();
-    currentSpeechUtteranceRef.current = null;
-  };
-
   const startVoiceSession = async () => {
-    logTelemetry("start_voice_session", { isDesktop });
-    if (voiceModeTypeRef.current === "Realtime") {
-      await startRealtimeVoiceSession();
-    } else {
-      await startStandardVoiceSession();
-    }
-  };
-
-  // ----------------------------------------------------
-  // NATIVE REALTIME VOICE SESSION (WebRTC Flow)
-  // ----------------------------------------------------
-  const startRealtimeVoiceSession = async () => {
     setState("CONNECTING");
-    setErrorMessage("");
-    setFinalTranscript("");
-    setInterimTranscript("");
-    setFullAssistantText("");
-    setVoiceNotice("");
-    lastUserTranscriptRef.current = "";
-    lastAssistantTranscriptRef.current = "";
-
-    try {
-      // 1. Fetch ephemeral connection credentials from backend
-      const config = await voiceService.getRealtimeSession();
-      if (!config.enabled || !config.clientSecret) {
-        logTelemetry("realtime_session_disabled_fallback");
-        setVoiceNotice("Standard Voice Mode active. Realtime engine is offline.");
-        setVoiceModeType("Standard");
-        localStorage.setItem("champai_voice_mode_type", "Standard");
-        await startStandardVoiceSession();
-        return;
-      }
-
-      // 2. Configure PeerConnection
-      const pc = new RTCPeerConnection();
-      peerConnectionRef.current = pc;
-
-      // Subscribe to remote audio track playout
-      pc.ontrack = (e) => {
-        logTelemetry("webrtc_track_received");
-        if (remoteAudioRef.current) {
-          remoteAudioRef.current.srcObject = e.streams[0];
-        }
-      };
-
-      // 3. Prompt mic access
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
-      localStreamRef.current = stream;
-      pc.addTrack(stream.getTracks()[0]);
-
-      // 4. Create WebRTC data channel
-      const dc = pc.createDataChannel("oai-events");
-      dataChannelRef.current = dc;
-
-      dc.onopen = () => {
-        logTelemetry("webrtc_datachannel_opened");
-        setState("LISTENING");
-
-        // Send model instructions and turn detection rules
-        const instructions =
-          "You are Champ.ai, a helpful AI voice companion. Always respond in the dominant language used by the user (Tamil, Tanglish, or English). Keep your responses natural, friendly, and concise (1-3 sentences maximum). Avoid overly formal textbook Tamil. Do not translate tech terms (Node.js, React, MongoDB, JWT).";
-
-        const sessionUpdate = {
-          type: "session.update",
-          session: {
-            modalities: ["audio", "text"],
-            instructions,
-            voice: "alloy",
-            input_audio_transcription: {
-              model: "whisper-1",
-            },
-            turn_detection: {
-              type: "server_vad",
-              threshold: 0.5,
-              prefix_padding_ms: 300,
-              silence_duration_ms: 1200,
-            },
-          },
-        };
-        dc.send(JSON.stringify(sessionUpdate));
-      };
-
-      dc.onmessage = (e) => {
-        const serverEvent = JSON.parse(e.data);
-        handleRealtimeEvent(serverEvent);
-      };
-
-      // 5. Initiate WebRTC offer exchange
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-
-      const baseUrl = "https://api.openai.com/v1/realtime";
-      const model = "gpt-4o-mini-realtime-preview-2024-12-17";
-      const response = await fetch(`${baseUrl}?model=${model}`, {
-        method: "POST",
-        body: offer.sdp,
-        headers: {
-          Authorization: `Bearer ${config.clientSecret}`,
-          "Content-Type": "application/sdp",
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error("WebRTC offer handshake failed");
-      }
-
-      const sdpAnswer = await response.text();
-      const answer = {
-        type: "answer",
-        sdp: sdpAnswer,
-      };
-      await pc.setRemoteDescription(answer as any);
-      logTelemetry("webrtc_session_handshake_complete");
-
-    } catch (err: any) {
-      console.error("WebRTC session initialization failed:", err);
-      logTelemetry("webrtc_connection_failed", { error: err.message });
-      setVoiceNotice("Realtime voice failed. Falling back to Standard voice.");
-      setVoiceModeType("Standard");
-      localStorage.setItem("champai_voice_mode_type", "Standard");
-      await startStandardVoiceSession();
-    }
-  };
-
-  const handleRealtimeEvent = (event: any) => {
-    switch (event.type) {
-      case "session.created":
-        logTelemetry("webrtc_session_created", { id: event.session?.id });
-        break;
-
-      case "input_audio_buffer.speech_started":
-        logTelemetry("webrtc_speech_started");
-        // True automatic barge-in: cancel AI output instantly if user interrupts
-        if (stateRef.current === "AI_SPEAKING" || stateRef.current === "THINKING") {
-          handleRealtimeInterrupt("CONFIRMED_USER_SPEECH");
-        }
-        setState("USER_SPEAKING");
-        break;
-
-      case "conversation.item.input_audio_transcription.completed":
-        // Whisper user input transcript completed
-        logTelemetry("webrtc_user_transcript", { transcript: event.transcript });
-        lastUserTranscriptRef.current = event.transcript?.trim() || "";
-        setFinalTranscript(event.transcript?.trim() || "");
-        break;
-
-      case "response.created":
-        setState("THINKING");
-        break;
-
-      case "response.output_item.added":
-        // Reset assistant transcript block
-        lastAssistantTranscriptRef.current = "";
-        setFullAssistantText("");
-        break;
-
-      case "response.audio_transcript.delta":
-        // AI progressive text streams
-        setState("AI_SPEAKING");
-        lastAssistantTranscriptRef.current += event.delta;
-        setFullAssistantText((prev) => prev + event.delta);
-        break;
-
-      case "response.done": {
-        logTelemetry("webrtc_response_done");
-        setState("LISTENING");
-
-        // Save turns dynamically in database
-        const userContent = lastUserTranscriptRef.current;
-        const assistantContent = lastAssistantTranscriptRef.current;
-        if (userContent && assistantContent) {
-          saveRealtimeTurn(userContent, assistantContent);
-        }
-        break;
-      }
-
-      case "error":
-        console.error("Realtime WebRTC socket error:", event.error);
-        logTelemetry("webrtc_error", { error: event.error });
-        break;
-    }
-  };
-
-  const handleRealtimeInterrupt = (reason = "MANUAL_STOP") => {
-    logTelemetry("webrtc_interrupted", { reason });
-
-    // 1. Send session cancel to OpenAI WebRTC gateway
-    if (dataChannelRef.current && dataChannelRef.current.readyState === "open") {
-      dataChannelRef.current.send(
-        JSON.stringify({
-          type: "response.cancel",
-        })
-      );
-    }
-
-    // 2. Stop playout audio instantly
-    if (remoteAudioRef.current) {
-      remoteAudioRef.current.pause();
-      remoteAudioRef.current.srcObject = null;
-    }
-
-    setState("LISTENING");
-  };
-
-  const saveRealtimeTurn = async (userText: string, assistantText: string) => {
-    try {
-      const chatId = chatRef.current?._id;
-      if (!chatId) return;
-
-      logTelemetry("save_realtime_turn", { userText, assistantText });
-      await voiceService.saveRealtimeMessages(chatId, userText, assistantText);
-
-      // Reset turn references
-      lastUserTranscriptRef.current = "";
-      lastAssistantTranscriptRef.current = "";
-
-      // Refresh messages store state
-      const { fetchMessages } = useMessageStore.getState();
-      await fetchMessages(chatId);
-    } catch (err) {
-      console.error("Failed to persist WebRTC voice turn:", err);
-    }
-  };
-
-  // ----------------------------------------------------
-  // COMPATIBILITY FALLBACK (Standard Voice Mode)
-  // ----------------------------------------------------
-  const startStandardVoiceSession = async () => {
-    setState("CONNECTING");
+    const sessionId = crypto.randomUUID();
+    recognitionSessionIdRef.current = sessionId;
+    logTelemetry("recognition_session_id", { sessionId });
     setErrorMessage("");
     setFinalTranscript("");
     setInterimTranscript("");
@@ -490,7 +222,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     if (!SpeechRecognition) {
       setState("ERROR");
       setErrorMessage(
-        "Live speech recognition is not supported in this browser. Please use standard chat."
+        "Live speech recognition is not supported in this browser. Please use a supported browser (Chrome, Edge) or continue in text mode."
       );
       return;
     }
@@ -498,6 +230,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     setState("REQUESTING_MICROPHONE");
 
     try {
+      // Prompt microphone permissions explicitly
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
@@ -508,22 +241,26 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
 
       localStreamRef.current = stream;
 
+      // Initialize speech recognition
       const rec = new SpeechRecognition();
       rec.continuous = true;
       rec.interimResults = true;
 
+      // Set target speech capture lang based on settings
       let targetLang = "en-US";
       if (voiceLangRef.current === "Tamil") {
         targetLang = "ta-IN";
       } else if (voiceLangRef.current === "English") {
         targetLang = "en-US";
       } else {
+        // Auto: defaults to user's last selected language or en-US
         targetLang = localStorage.getItem("champai_speech_lang") || "en-US";
       }
 
       rec.lang = targetLang;
       logTelemetry("recognition_language", { lang: targetLang });
 
+      // If user is speaking Tamil and Chrome isn't explicitly set to Tamil, prompt user
       if (voiceLangRef.current === "Auto" && targetLang === "en-US") {
         setVoiceNotice("தமிழில் பேசுகிறீர்களா? தமிழ் mode தேர்வு செய்தால் recognition accuracy மேம்படலாம்.");
       }
@@ -549,6 +286,21 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
           }
         }
 
+        // Automatic voice-triggered interruption (barge-in) ONLY on desktop browsers
+        if (stateRef.current === "AI_SPEAKING" && isDesktop && (currentInterim.trim().length > 3 || accumulatedFinal.trim().length > 3)) {
+          const currentSentence = activeUtteranceIndexRef.current >= 0 ? sentenceQueueRef.current[activeUtteranceIndexRef.current] || "" : "";
+          const userWords = (currentInterim || accumulatedFinal).toLowerCase().split(/\s+/);
+          const aiWords = currentSentence.toLowerCase().split(/\s+/);
+          
+          // Verify user words represent new intent rather than echo playback loopback
+          const isUniqueSpeech = userWords.some(word => word.length > 2 && !aiWords.includes(word));
+          if (isUniqueSpeech) {
+            handleInterrupt("CONFIRMED_USER_SPEECH");
+            return;
+          }
+        }
+
+        // Ignore standard speech inputs if thinking or AI is speaking
         if (stateRef.current === "THINKING" || stateRef.current === "AI_SPEAKING" || stateRef.current === "PROCESSING_SPEECH" || isMutedRef.current) {
           return;
         }
@@ -563,18 +315,21 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
         setInterimTranscript(currentInterim);
         setState("USER_SPEAKING");
 
+        // Reset existing silence detection timer
         if (silenceTimeoutRef.current) {
           clearTimeout(silenceTimeoutRef.current);
           logTelemetry("silence_timer_reset");
         }
 
+        // Language-aware adaptive end-of-turn detection
         const combinedText = (finalTranscriptRef.current + accumulatedFinal + currentInterim).trim();
         const isTamilSpeech = rec.lang.startsWith("ta");
         
-        let timeoutDelay = 1400;
+        let timeoutDelay = 1400; // English default
         if (isTamilSpeech) {
+          // Check Tamil suffix connective check (Unicode safe)
           const isTamilIncomplete = /(மற்றும்|ஆனால்|அப்புறம்|அதுக்கப்புறம்|அதனால்|எனக்கு|எப்படி|என்ன|எதுக்கு|ஏன்னா|பற்றி|வந்து|அப்படின்னா|அதாவது|இல்லாட்டி|இருந்தா|சொல்லி|சொல்லிட்டு|பண்ணி|பண்ணிட்டு|வேண்டும் என்று|என்று|ன்னு)\s*$/.test(combinedText);
-          timeoutDelay = isTamilIncomplete ? 3000 : 2200;
+          timeoutDelay = isTamilIncomplete ? 3000 : 2200; // longer pause for Tamil natural pace
         } else {
           const isIncomplete = /\b(and|but|or|so|because|if|when|how|what|why|who|help|create)\s*$/i.test(combinedText);
           timeoutDelay = isIncomplete ? 2200 : 1400;
@@ -591,20 +346,24 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
       };
 
       rec.onerror = (e: any) => {
-        console.error("Speech recognition error:", e.error);
+        console.error("Speech recognition service error:", e.error);
         if (e.error === "not-allowed" || e.error === "service-not-allowed") {
           setState("ERROR");
-          setErrorMessage("Microphone access denied.");
+          setErrorMessage("Microphone access was denied. Please check your system/browser settings.");
         }
       };
 
       rec.onend = () => {
+        // Continuous restarts: keep recognition alive on desktop, or on mobile when NOT speaking
         const current = stateRef.current;
-        if (!isMutedRef.current && (current === "LISTENING" || current === "USER_SPEAKING")) {
+        const wantListening = current === "LISTENING" || current === "USER_SPEAKING";
+        const allowSpeechBargeIn = current === "AI_SPEAKING" && isDesktop;
+
+        if (!isMutedRef.current && (wantListening || allowSpeechBargeIn)) {
           try {
             recognitionRef.current?.start();
           } catch (err) {
-            // ignore running
+            // SpeechRecognition is already running
           }
         }
       };
@@ -612,9 +371,43 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
       recognitionRef.current = rec;
       rec.start();
     } catch (err: any) {
+      console.error("Microphone capture failed:", err);
       setState("ERROR");
-      setErrorMessage("Microphone connection failed.");
+      setErrorMessage("Microphone permission denied. Access is required for Voice Mode.");
     }
+  };
+
+  const endVoiceSession = () => {
+    setState("IDLE");
+
+    // Cancel speech synthesis
+    cancelSpeechPlaybacks("SESSION_ENDED");
+
+    // Clear active timeouts
+    if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
+    if (aiSpeakingSafetyTimeoutRef.current) clearTimeout(aiSpeakingSafetyTimeoutRef.current);
+
+    // Stop mic stream tracks completely
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((track) => track.stop());
+      localStreamRef.current = null;
+    }
+
+    // Stop recognition
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {
+        // already stopped
+      }
+      recognitionRef.current = null;
+    }
+  };
+
+  const cancelSpeechPlaybacks = (reason: string) => {
+    logTelemetry("speech_cancel_reason", { reason });
+    window.speechSynthesis.cancel();
+    currentSpeechUtteranceRef.current = null;
   };
 
   const handleSubmitUserSpeech = async (speechText: string) => {
@@ -623,21 +416,25 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
       return;
     }
 
+    // Allocate a unique response ID for this conversation turn
     const responseId = crypto.randomUUID();
     activeResponseIdRef.current = responseId;
 
+    // Start timing telemetry
     speechEndTimeRef.current = Date.now();
     requestStartTimeRef.current = Date.now();
     firstTokenTimeRef.current = 0;
     firstAudioTimeRef.current = 0;
     logTelemetry("submitted_tamil_transcript", { text: speechText, responseId });
 
+    // Reset sentence queue parameters
     currentStreamTextRef.current = "";
     sentenceQueueRef.current = [];
     spokenSentenceIndicesRef.current.clear();
     activeUtteranceIndexRef.current = -1;
     isStreamFinishedRef.current = false;
     
+    // Clear transcripts and update display states
     setFinalTranscript("");
     setInterimTranscript("");
     setFullAssistantText("");
@@ -645,7 +442,8 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
 
     setState("THINKING");
 
-    if (recognitionRef.current) {
+    // Stop speech recognition immediately on mobile devices to prevent OS level audio ducking
+    if (!isDesktop && recognitionRef.current) {
       try {
         recognitionRef.current.stop();
       } catch (e) {
@@ -656,13 +454,16 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     try {
       let chatId = chatRef.current?._id;
 
+      // Auto-create chat if none selected
       if (!chatId) {
         const newChat = await createChat("Voice Chat");
         chatId = newChat._id;
         await fetchChats();
       }
 
+      // Stream response token-by-token directly using custom onToken callback
       await sendMessage(chatId, speechText, undefined, (token) => {
+        // Discard tokens if user has interrupted or moved to a new turn
         if (activeResponseIdRef.current !== responseId) return;
         handleStreamToken(token, responseId);
       });
@@ -672,6 +473,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
       isStreamFinishedRef.current = true;
       logTelemetry("assistant_stream_completed", { responseId });
       
+      // Flush out any remaining trailing text in stream buffer
       const isTamil = recognitionRef.current?.lang?.startsWith("ta");
       const finalSentences = extractSentences(currentStreamTextRef.current, true, isTamil, currentStreamTextRef);
       for (const sent of finalSentences) {
@@ -681,23 +483,35 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
         }
       }
 
+      // Check if queue has finished playing
       checkQueueFinished(responseId);
 
     } catch (err: any) {
+      console.error("Error generating voice response:", err);
+      // Discard errors if user has interrupted or moved to a new turn
       if (activeResponseIdRef.current !== responseId) return;
+
       setState("ERROR");
-      setErrorMessage("Service is temporarily offline.");
+      if (err.code === "APP_DAILY_QUOTA_EXCEEDED") {
+        setErrorMessage("You have reached your daily text/chat limits. Please upgrade to Pro.");
+      } else {
+        setErrorMessage("Connection lost. Voice Mode is temporarily unavailable.");
+      }
     }
   };
 
   const handleStreamToken = (token: string, responseId: string) => {
+    // Record time to first token
     if (firstTokenTimeRef.current === 0) {
       firstTokenTimeRef.current = Date.now();
+      logTelemetry("first_ai_token_timestamp", { latencyMs: firstTokenTimeRef.current - requestStartTimeRef.current });
     }
 
+    // Append to authoritative progressive text
     setFullAssistantText((prev) => prev + token);
     currentStreamTextRef.current += token;
 
+    // Extract newly completed sentences from stream
     const isTamil = recognitionRef.current?.lang?.startsWith("ta");
     const sentences = extractSentences(currentStreamTextRef.current, false, isTamil, currentStreamTextRef);
     
@@ -716,10 +530,19 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
   };
 
   const playNextSentenceInQueue = (responseId: string) => {
+    // Discard playbacks if the session response has changed
     if (activeResponseIdRef.current !== responseId) return;
-    if (currentSpeechUtteranceRef.current) return;
 
+    // If currently speaking, wait for active sentence onend trigger
+    if (currentSpeechUtteranceRef.current) {
+      return;
+    }
+
+    // Find the next index to play
     const nextIndex = activeUtteranceIndexRef.current + 1;
+    logTelemetry("tts_queue_length", { length: sentenceQueueRef.current.length, nextIndex });
+    
+    // Check if next sentence exists in queue
     if (nextIndex >= sentenceQueueRef.current.length) {
       checkQueueFinished(responseId);
       return;
@@ -730,11 +553,13 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
 
     const cleanText = cleanSentenceText(nextSentence);
     if (!cleanText) {
+      // Discard empty chunk and go next
       spokenSentenceIndicesRef.current.add(nextIndex);
       playNextSentenceInQueue(responseId);
       return;
     }
 
+    // Mark active state
     setState("AI_SPEAKING");
 
     const utterance = new SpeechSynthesisUtterance(cleanText);
@@ -747,6 +572,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
         v.lang.startsWith(utterance.lang.substring(0, 2))
     );
 
+    // If Tamil language is detected but no high-quality Tamil voice is installed on device
     if (utterance.lang.startsWith("ta") && matchingVoices.length === 0) {
       setVoiceNotice("இந்த device-ல் high-quality Tamil voice கிடைக்கவில்லை. Tamil pronunciation device-ஐ பொறுத்து மாறலாம்.");
     }
@@ -761,29 +587,65 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
       utterance.voice = bestVoice;
     }
 
+    // Log voice inventory metadata to assist developers
+    if (bestVoice) {
+      console.log(`[Voice Inventory] Name: ${bestVoice.name}, Lang: ${bestVoice.lang}, Local: ${bestVoice.localService}, Default: ${bestVoice.default}`);
+    }
+
+    // Measure time to first audio output
     utterance.onstart = () => {
       if (activeResponseIdRef.current !== responseId) return;
+      
       logTelemetry("tts_chunk_started", { text: cleanText, index: nextIndex });
+
+      if (firstAudioTimeRef.current === 0) {
+        firstAudioTimeRef.current = Date.now();
+        logTelemetry("first_tts_start_timestamp", { latencyMs: firstAudioTimeRef.current - requestStartTimeRef.current });
+        
+        // Calculate latency metrics
+        const speechEndToRequest = requestStartTimeRef.current - speechEndTimeRef.current;
+        const requestToFirstToken = firstTokenTimeRef.current - requestStartTimeRef.current;
+        const firstTokenToFirstAudio = firstAudioTimeRef.current - firstTokenTimeRef.current;
+        const totalLatency = firstAudioTimeRef.current - speechEndTimeRef.current;
+
+        console.log(
+          `%c[Voice Mode Latency Report]\n` +
+          `  - speech_end_to_request_ms: ${speechEndToRequest}ms\n` +
+          `  - request_to_first_token_ms: ${requestToFirstToken}ms\n` +
+          `  - first_token_to_first_audio_ms: ${firstTokenToFirstAudio}ms\n` +
+          `  - total_voice_response_latency_ms: ${totalLatency}ms`,
+          "color: #3b82f6; font-weight: bold; font-size: 11px;"
+        );
+      }
     };
 
     utterance.onend = () => {
       if (activeResponseIdRef.current !== responseId) return;
+
+      logTelemetry("tts_chunk_completed", { index: nextIndex });
       spokenSentenceIndicesRef.current.add(nextIndex);
       currentSpeechUtteranceRef.current = null;
       if (aiSpeakingSafetyTimeoutRef.current) clearTimeout(aiSpeakingSafetyTimeoutRef.current);
+      
+      // Play next sentence chunk
       playNextSentenceInQueue(responseId);
     };
 
-    utterance.onerror = () => {
+    utterance.onerror = (e) => {
       if (activeResponseIdRef.current !== responseId) return;
+
+      console.warn("Utterance playback error:", e);
       spokenSentenceIndicesRef.current.add(nextIndex);
       currentSpeechUtteranceRef.current = null;
       if (aiSpeakingSafetyTimeoutRef.current) clearTimeout(aiSpeakingSafetyTimeoutRef.current);
+      
+      // Proceed next
       playNextSentenceInQueue(responseId);
     };
 
     currentSpeechUtteranceRef.current = utterance;
 
+    // Safety timeout: prevent synthesis locking on mobile
     const estimatedDuration = cleanText.length * 150 + 5000;
     if (aiSpeakingSafetyTimeoutRef.current) clearTimeout(aiSpeakingSafetyTimeoutRef.current);
     aiSpeakingSafetyTimeoutRef.current = setTimeout(() => {
@@ -813,92 +675,39 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     }
 
     setState("LISTENING");
+    
+    // Clear display transcripts for next turn
     setFinalTranscript("");
     setInterimTranscript("");
 
+    // Restart speech recognition safely
     if (recognitionRef.current) {
       try {
         recognitionRef.current.start();
       } catch (e) {
-        // ignore running
+        // already running
       }
     }
   };
 
-  const handleStandardInterrupt = (source = "MANUAL_STOP") => {
+  // Safe barge-in interruption logic
+  const handleInterrupt = (source = "MANUAL_STOP") => {
     if (stateRef.current === "AI_SPEAKING" || stateRef.current === "THINKING") {
       setState("INTERRUPTED");
+      logTelemetry("interruption_source", { source });
+      
+      // Stop speech synthesis immediately with explicit reason logged
       cancelSpeechPlaybacks(source);
       
       if (aiSpeakingSafetyTimeoutRef.current) clearTimeout(aiSpeakingSafetyTimeoutRef.current);
 
+      // Invalidate current response completely
       activeResponseIdRef.current = "";
       sentenceQueueRef.current = [];
       activeUtteranceIndexRef.current = -1;
       
       resumeListening();
     }
-  };
-
-  // ----------------------------------------------------
-  // GENERAL CONTROLS AND CLEANUPS
-  // ----------------------------------------------------
-  const handleInterrupt = (source = "MANUAL_STOP") => {
-    if (voiceModeType === "Realtime") {
-      handleRealtimeInterrupt(source);
-    } else {
-      handleStandardInterrupt(source);
-    }
-  };
-
-  const endVoiceSession = () => {
-    setState("IDLE");
-
-    // Close WebRTC active traces
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.close();
-      peerConnectionRef.current = null;
-    }
-    if (dataChannelRef.current) {
-      dataChannelRef.current.close();
-      dataChannelRef.current = null;
-    }
-
-    // Deregister concurrent active session from backend database tracker
-    if (voiceModeType === "Realtime") {
-      voiceService.closeRealtimeSession().catch(() => {});
-    }
-
-    // Standard cleans
-    cancelSpeechPlaybacks("SESSION_ENDED");
-    if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
-    if (aiSpeakingSafetyTimeoutRef.current) clearTimeout(aiSpeakingSafetyTimeoutRef.current);
-
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((track) => track.stop());
-      localStreamRef.current = null;
-    }
-
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch (e) {
-        // already stopped
-      }
-      recognitionRef.current = null;
-    }
-  };
-
-  const handleModeChange = (mode: "Standard" | "Realtime") => {
-    setVoiceModeType(mode);
-    localStorage.setItem("champai_voice_mode_type", mode);
-    logTelemetry("voice_mode_changed", { mode });
-
-    // Restart active voice session using new settings config
-    endVoiceSession();
-    setTimeout(() => {
-      startVoiceSession();
-    }, 300);
   };
 
   const handleLanguageChange = (lang: string) => {
@@ -919,37 +728,26 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
 
     if (nextMuted) {
       setState("MUTED");
-      if (voiceModeType === "Realtime") {
-        if (localStreamRef.current) {
-          localStreamRef.current.getAudioTracks()[0].enabled = false;
-        }
-      } else {
-        if (recognitionRef.current) {
-          try {
-            recognitionRef.current.stop();
-          } catch (e) {
-            // already stopped
-          }
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {
+          // already stopped
         }
       }
     } else {
       setState("LISTENING");
-      if (voiceModeType === "Realtime") {
-        if (localStreamRef.current) {
-          localStreamRef.current.getAudioTracks()[0].enabled = true;
-        }
-      } else {
-        if (recognitionRef.current) {
-          try {
-            recognitionRef.current.start();
-          } catch (e) {
-            // already started
-          }
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.start();
+        } catch (e) {
+          // already started
         }
       }
     }
   };
 
+  // Convert current state into user-friendly description
   const getStatusText = () => {
     switch (state) {
       case "CONNECTING":
@@ -957,9 +755,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
       case "REQUESTING_MICROPHONE":
         return "Requesting microphone access...";
       case "LISTENING":
-        return voiceModeType === "Realtime"
-          ? "Realtime Mode Online..."
-          : voiceLang === "Tamil" || (voiceLang === "Auto" && localStorage.getItem("champai_speech_lang") === "ta-IN")
+        return voiceLang === "Tamil" || (voiceLang === "Auto" && localStorage.getItem("champai_speech_lang") === "ta-IN")
           ? "Listening in Tamil..."
           : "Listening in English...";
       case "USER_SPEAKING":
@@ -981,6 +777,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     }
   };
 
+  // Map state to 3D morphing sphere animator states
   const getOrbState = (): "idle" | "thinking" | "streaming" | "listening" | "error" => {
     switch (state) {
       case "LISTENING":
@@ -998,10 +795,12 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     }
   };
 
+  // Filter out system prompts and show conversation transcript
   const visibleMessages = messages.filter(
     (m) => m.role === "user" || m.role === "assistant"
   );
 
+  // Form display transcription dynamically
   const displayTranscript = (finalTranscript + " " + interimTranscript).trim();
 
   return (
@@ -1020,36 +819,20 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
               <span className="text-sm font-black tracking-widest uppercase">Champ.ai Voice</span>
             </div>
 
-            {/* Language and Engine Selector Dropdowns */}
+            {/* Language Selector Dropdown */}
             <div className="flex items-center gap-4">
-              {/* Engine Toggle */}
               <div className="flex items-center gap-2 bg-slate-900/50 border border-slate-800 rounded-xl px-2.5 py-1">
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Engine:</span>
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Lang:</span>
                 <select
-                  value={voiceModeType}
-                  onChange={(e) => handleModeChange(e.target.value as any)}
+                  value={voiceLang}
+                  onChange={(e) => handleLanguageChange(e.target.value)}
                   className="bg-transparent text-xs text-blue-400 font-bold outline-none cursor-pointer"
                 >
-                  <option value="Realtime" className="bg-slate-950 text-white">Realtime</option>
-                  <option value="Standard" className="bg-slate-950 text-white">Standard</option>
+                  <option value="Auto" className="bg-slate-950 text-white">Auto</option>
+                  <option value="Tamil" className="bg-slate-950 text-white">தமிழ்</option>
+                  <option value="English" className="bg-slate-950 text-white">English</option>
                 </select>
               </div>
-
-              {/* Language Toggle (only active in Standard mode) */}
-              {voiceModeType === "Standard" && (
-                <div className="flex items-center gap-2 bg-slate-900/50 border border-slate-800 rounded-xl px-2.5 py-1">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Lang:</span>
-                  <select
-                    value={voiceLang}
-                    onChange={(e) => handleLanguageChange(e.target.value)}
-                    className="bg-transparent text-xs text-blue-400 font-bold outline-none cursor-pointer"
-                  >
-                    <option value="Auto" className="bg-slate-950 text-white">Auto</option>
-                    <option value="Tamil" className="bg-slate-950 text-white">தமிழ்</option>
-                    <option value="English" className="bg-slate-950 text-white">English</option>
-                  </select>
-                </div>
-              )}
 
               <button
                 onClick={onClose}
