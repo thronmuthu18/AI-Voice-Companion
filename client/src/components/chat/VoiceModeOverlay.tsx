@@ -31,103 +31,13 @@ type VoiceState =
   | "INTERRUPTED"
   | "ERROR";
 
-// Helper to split text into complete sentences, avoiding breaking technical terms
-function extractSentences(text: string, isLast = false, isTamil = false, textBufferRef?: React.MutableRefObject<string>): string[] {
-  const sanitized = text
-    .replace(/Node\.js/gi, "Node_js_marker")
-    .replace(/Express\.js/gi, "Express_js_marker")
-    .replace(/React\.js/gi, "React_js_marker");
-
-  // Split on standard punctuation followed by whitespace
-  const parts = sanitized.split(/(?<=[.?!。！？\n])\s+/);
-
-  const sentences: string[] = [];
-  let buffer = "";
-
-  for (let i = 0; i < parts.length; i++) {
-    let part = parts[i].trim();
-    if (!part) continue;
-
-    part = part
-      .replace(/Node_js_marker/g, "Node.js")
-      .replace(/Express_js_marker/g, "Express.js")
-      .replace(/React_js_marker/g, "React.js");
-
-    // If it's the last part and we're not finishing the stream, wait for standard punctuation
-    if (!isLast && i === parts.length - 1) {
-      const endsWithPunct = /[.?!。！？\n]$/.test(part);
-      
-      // Tamil specific chunking optimization: if no punctuation but buffer gets long
-      if (!endsWithPunct && isTamil && part.length > 65) {
-        const words = part.split(/\s+/);
-        if (words.length > 3) {
-          const lastWord = words.pop() || "";
-          const completePhrase = words.join(" ");
-          const phraseToPush = buffer ? buffer + " " + completePhrase : completePhrase;
-          sentences.push(phraseToPush);
-          buffer = "";
-          
-          // Re-update current text buffer with the trailing incomplete word
-          if (textBufferRef) {
-            textBufferRef.current = lastWord;
-          }
-          break;
-        }
-      }
-
-      if (!endsWithPunct) {
-        // Accumulate trailing incomplete part in buffer ref
-        if (textBufferRef) {
-          textBufferRef.current = (buffer ? buffer + " " : "") + part;
-        }
-        return sentences;
-      }
-    }
-
-    // Avoid tiny chunks: accumulate short segments
-    if (buffer) {
-      part = buffer + " " + part;
-      buffer = "";
-    }
-
-    if (!isLast && part.length < 15 && i < parts.length - 1) {
-      buffer = part;
-    } else {
-      sentences.push(part);
-    }
-  }
-
-  // Handle leftover buffer at the end of stream
-  if (buffer) {
-    if (isLast) {
-      sentences.push(buffer);
-    } else if (textBufferRef) {
-      textBufferRef.current = buffer;
-    }
-  }
-
-  return sentences;
-}
-
-// Clean formatting tags, markdown symbols, emoji names, URLs for natural pronunciation
-function cleanSentenceText(text: string): string {
-  return text
-    .replace(/```[\s\S]*?```/g, "") // remove code blocks
-    .replace(/`[^`]*`/g, "")       // remove inline code
-    .replace(/[*_#~]/g, "")        // remove markdown tags
-    .replace(/\[\d+\]/g, "")       // remove reference brackets e.g. [1]
-    .replace(/\bhttps?:\/\/\S+/gi, "") // remove URLs
-    .replace(/[👇👉👋🤖🎨]/gu, "")  // remove layout emojis
-    .replace(/\s+/g, " ")          // normalize spaces
-    .trim();
-}
-
-// Detect dominant language for chunk speech synthesis
-function detectDominantLanguage(text: string): "ta-IN" | "en-US" {
-  const tamilChars = text.match(/[\u0B80-\u0BFF]/g);
-  const tamilCount = tamilChars ? tamilChars.length : 0;
-  return tamilCount > 2 ? "ta-IN" : "en-US";
-}
+import {
+  splitSentences,
+  cleanSpeechText,
+  detectDominantLanguage,
+  selectBestSystemVoice,
+  calculateAdaptivePause
+} from "../../utils/speechSynthesisHelper";
 
 export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayProps) {
   const { currentChat, createChat, fetchChats } = useChatStore();
@@ -625,8 +535,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
       logTelemetry("assistant_stream_completed", { responseId });
       
       // Flush out any remaining trailing text in stream buffer
-      const isTamil = recognitionRef.current?.lang?.startsWith("ta");
-      const finalSentences = extractSentences(currentStreamTextRef.current, true, isTamil, currentStreamTextRef);
+      const finalSentences = splitSentences(currentStreamTextRef.current, true, currentStreamTextRef);
       for (const sent of finalSentences) {
         if (!sentenceQueueRef.current.includes(sent)) {
           sentenceQueueRef.current.push(sent);
@@ -664,8 +573,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     currentStreamTextRef.current += token;
 
     // Extract newly completed sentences from stream
-    const isTamil = recognitionRef.current?.lang?.startsWith("ta");
-    const sentences = extractSentences(currentStreamTextRef.current, false, isTamil, currentStreamTextRef);
+    const sentences = splitSentences(currentStreamTextRef.current, false, currentStreamTextRef);
     
     let added = false;
     for (const sent of sentences) {
@@ -692,7 +600,6 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
 
     // Find the next index to play
     const nextIndex = activeUtteranceIndexRef.current + 1;
-    logTelemetry("tts_queue_length", { length: sentenceQueueRef.current.length, nextIndex });
     
     // Check if next sentence exists in queue
     if (nextIndex >= sentenceQueueRef.current.length) {
@@ -703,7 +610,10 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     const nextSentence = sentenceQueueRef.current[nextIndex];
     activeUtteranceIndexRef.current = nextIndex;
 
-    const cleanText = cleanSentenceText(nextSentence).normalize("NFC");
+    logTelemetry("Chunk created", { text: nextSentence });
+    logTelemetry("Queue length", { length: sentenceQueueRef.current.length });
+
+    const cleanText = cleanSpeechText(nextSentence).normalize("NFC");
     if (!cleanText) {
       // Discard empty chunk and go next
       spokenSentenceIndicesRef.current.add(nextIndex);
@@ -718,46 +628,11 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     utterance.volume = isAudioMutedRef.current ? 0 : 1;
     utterance.lang = detectDominantLanguage(cleanText);
 
-    const voices = window.speechSynthesis.getVoices();
-    const matchingVoices = voices.filter(
-      (v) =>
-        v.lang.startsWith(utterance.lang) ||
-        v.lang.startsWith(utterance.lang.substring(0, 2))
-    );
-
-    // Prioritize high-quality voices (Google, Microsoft, natural/premium)
-    const sortedMatchingVoices = [...matchingVoices].sort((a, b) => {
-      const aGoogle = a.name.toLowerCase().includes("google");
-      const bGoogle = b.name.toLowerCase().includes("google");
-      if (aGoogle && !bGoogle) return -1;
-      if (!aGoogle && bGoogle) return 1;
-
-      const aMs = a.name.toLowerCase().includes("microsoft");
-      const bMs = b.name.toLowerCase().includes("microsoft");
-      if (aMs && !bMs) return -1;
-      if (!aMs && bMs) return 1;
-
-      const aNatural = a.name.toLowerCase().includes("natural");
-      const bNatural = b.name.toLowerCase().includes("natural");
-      if (aNatural && !bNatural) return -1;
-      if (!aNatural && bNatural) return 1;
-
-      return 0;
-    });
-
-    // If Tamil language is detected but no high-quality Tamil voice is installed on device
-    if (utterance.lang.startsWith("ta") && sortedMatchingVoices.length === 0) {
-      setVoiceNotice("இந்த device-ல் high-quality Tamil voice கிடைக்கவில்லை. Tamil pronunciation device-ஐ பொறுத்து மாறலாம்.");
-    }
-
-    const bestVoice = sortedMatchingVoices[0];
+    const bestVoice = selectBestSystemVoice(utterance.lang);
     if (bestVoice) {
       utterance.voice = bestVoice;
-    }
-
-    // Log voice inventory metadata to assist developers
-    if (bestVoice) {
-      console.log(`[Voice Inventory] Name: ${bestVoice.name}, Lang: ${bestVoice.lang}, Local: ${bestVoice.localService}, Default: ${bestVoice.default}`);
+      logTelemetry("Voice selected", { name: bestVoice.name, lang: bestVoice.lang });
+      console.log(`[Voice Inventory] Selected voice: ${bestVoice.name}`);
     }
 
     // Measure time to first audio output
@@ -765,6 +640,7 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
       if (activeResponseIdRef.current !== responseId) return;
 
       logTelemetry("AI speaking", { text: cleanText });
+      logTelemetry("Chunk played", { text: cleanText, index: nextIndex });
       logTelemetry("Playback restarted");
       logTelemetry("Speech started", { text: cleanText });
       logTelemetry("tts_chunk_started", { text: cleanText, index: nextIndex });
@@ -793,14 +669,20 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
     utterance.onend = () => {
       if (activeResponseIdRef.current !== responseId) return;
 
+      logTelemetry("Speech completed");
       logTelemetry("Speech finished");
       logTelemetry("tts_chunk_completed", { index: nextIndex });
       spokenSentenceIndicesRef.current.add(nextIndex);
       currentSpeechUtteranceRef.current = null;
       if (aiSpeakingSafetyTimeoutRef.current) clearTimeout(aiSpeakingSafetyTimeoutRef.current);
       
-      // Play next sentence chunk
-      playNextSentenceInQueue(responseId);
+      // Calculate dynamic pause between sentences
+      const pauseDuration = calculateAdaptivePause(nextSentence);
+      
+      setTimeout(() => {
+        if (activeResponseIdRef.current !== responseId) return;
+        playNextSentenceInQueue(responseId);
+      }, pauseDuration);
     };
 
     utterance.onerror = (e) => {
@@ -811,8 +693,11 @@ export default function VoiceModeOverlay({ isOpen, onClose }: VoiceModeOverlayPr
       currentSpeechUtteranceRef.current = null;
       if (aiSpeakingSafetyTimeoutRef.current) clearTimeout(aiSpeakingSafetyTimeoutRef.current);
       
-      // Proceed next
-      playNextSentenceInQueue(responseId);
+      // Proceed next with brief automatic recovery timeout
+      setTimeout(() => {
+        if (activeResponseIdRef.current !== responseId) return;
+        playNextSentenceInQueue(responseId);
+      }, 500);
     };
 
     currentSpeechUtteranceRef.current = utterance;
